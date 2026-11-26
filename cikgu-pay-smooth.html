@@ -155,11 +155,14 @@ button.link { border:none; background:none; color:var(--accent); padding:4px 0; 
 .wiz-steps { display:flex; gap:8px; margin:6px 0 2px; }
 .wiz-steps span { flex:1; height:5px; border-radius:3px; background:var(--surface-3); }
 .wiz-steps span.on { background:var(--accent); }
-.wizrow { display:grid; grid-template-columns:1.1fr 1.2fr 1.2fr; gap:10px; align-items:end; }
-.wizstu { display:grid; grid-template-columns:1.4fr 2fr .8fr; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
+.wizrow { display:grid; grid-template-columns:1.1fr 1.2fr 1.2fr 34px; gap:10px; align-items:end; }
+.wizrow + .wizrow { margin-top:4px; }
+.wizrow .x { min-height:38px; padding:0; }
+.wizstu { display:grid; grid-template-columns:1.4fr 1.8fr .8fr; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
 .wizstu:first-child { border-top:none; }
 .wizadd input, .wizadd select { height:40px; }
-.wizadd { grid-template-columns:1.4fr 2fr .8fr; align-items:end; border-top:1px dashed var(--border); margin-top:6px; }
+.wizadd { grid-template-columns:1.3fr .8fr 1.7fr .7fr; align-items:end; border-top:1px dashed var(--border); margin-top:6px; }
+.wizadd.banks { grid-template-columns:1.3fr .8fr 1.5fr .7fr 1.1fr; }
 
 /* ---------- Invoices list ---------- */
 .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
@@ -429,18 +432,21 @@ html.smooth details.more-opts[open] > summary::before { transform: rotate(90deg)
 
         <div data-step="2" hidden>
           <h3>2 · Where parents should pay</h3>
-          <div class="hint">Fill in the accounts you use. You can leave one empty if you don’t use it.</div>
+          <div class="hint">Add every account parents can pay into. Each student can use a different one.</div>
           <div id="wizBanks"></div>
+          <div class="btns"><button id="wizAddBank">＋ Add another bank account</button></div>
         </div>
 
         <div data-step="3" hidden>
           <h3>3 · Add your students</h3>
-          <div class="hint">Name, how they are billed, and the price per session. You can add more details (schedule, PDF name, notes) later in Settings › Students.</div>
+          <div class="hint">Name, level, how they are billed and the price per session. The invoice shows the name with the level in brackets, e.g. “Student Name (Year 10)”. More details (short code, schedule, PDF name, notes) are in Settings › Students.</div>
           <div id="wizStudents"></div>
-          <div class="wizstu wizadd">
+          <div class="wizstu wizadd" id="wizAddRow">
             <div><label style="margin-top:0">Student name</label><input id="wizName" placeholder="Full name"></div>
+            <div><label style="margin-top:0">Level</label><input id="wizLevel" placeholder="e.g. Year 10"></div>
             <div><label style="margin-top:0">Billing</label><select id="wizPlan"></select></div>
             <div><label style="margin-top:0">RM / session</label><input id="wizRate" type="number" min="0" step="any"></div>
+            <div class="wizbank"><label style="margin-top:0">Bank account</label><select id="wizBank"></select></div>
           </div>
           <div class="btns"><button id="wizAdd">＋ Add student</button></div>
         </div>
@@ -633,6 +639,9 @@ html.smooth details.more-opts[open] > summary::before { transform: rotate(90deg)
 
       <details class="more-opts" id="moreOpts">
         <summary>More options</summary>
+        <label>Bank account on this document</label>
+        <select id="docBankSel"></select>
+        <div class="hint" id="docBankHint"></div>
         <label>Document type</label>
         <select id="kindSel">
           <option value="end">Invoice with lesson summary (end of month)</option>
@@ -756,7 +765,7 @@ const studentDefaults = () => ({ id: uid(), name:'', level:'', code:'', rate:100
 // A document's life: draft (being written) → sent (PDF saved / printed) → paid (invoices only)
 const docDefaults = () => ({ id: uid(), kind:'end', studentId:'', month:'', invNo:'', seq:0, rate:0, lessons:[], slots:[],
   lastPayDate:'', lastPayRef:'', payStatus:'', payDate:'', payRef:'', adjLabel:'', adjAmount:0, notes:'', greeting:'',
-  sent:false, sentAt:'', pdfPath:'', paid:false, paidDate:'' });
+  sent:false, sentAt:'', pdfPath:'', paid:false, paidDate:'', bankId:'' });
 const lessonDefaults = () => ({ date:'', subject:'', topic:'', sessions:1, more:[] });
 const slotDefaults = () => ({ date:'', time:'', sessions:1, movedDate:'', movedTime:'' });
 const prefDefaults = () => ({ theme:'classic', accent:'mauve', setupDone:false, waInvoice:WA_DEFAULT.invoice, waSummary:WA_DEFAULT.summary });
@@ -845,7 +854,11 @@ function prevMonth(ym) { let [y,m] = ym.split('-').map(Number); m--; if (m < 1) 
 function thisMonth() { return todayISO().slice(0, 7); }
 function lastDay(ym) { const [y,m] = ym.split('-').map(Number); return toISO(new Date(y, m, 0)); }
 function student(id) { return S.students.find(s => s.id === id) || studentDefaults(); }
-function bankOf(st) { return S.tutor.banks.find(b => b.id === st.bankId) || S.tutor.banks[0] || {}; }
+function bankById(id) { return S.tutor.banks.find(b => b.id === id) || S.tutor.banks[0] || {}; }
+function bankOf(st) { return bankById(st.bankId); }
+// The account printed on a document: its own choice (More options) if set, else the student's usual one
+function docBank(d) { return bankById(d.bankId && S.tutor.banks.some(b => b.id === d.bankId) ? d.bankId : student(d.studentId).bankId); }
+function bankLabel(b) { return b && (b.bank || b.accNo) ? `${b.bank || 'Bank'}${b.accNo ? ' – ' + b.accNo : ''}` : '(no account yet)'; }
 const isInvoice = d => KINDS[d.kind] ? KINDS[d.kind].invoice : true;
 function autoNo(d) { return `${mmyyyy(d.month)}/${student(d.studentId).code || ''}`; }
 function invNo(d) { return (d.invNo || '').trim() || autoNo(d); }
@@ -1002,7 +1015,12 @@ function newDocument(sid, kind) {
 function openDoc(d) { S.draft = d; hidePdfResult(); showView('editor'); maybeTour('editor'); }
 // Older versions had a separate "Save to history"; now every document is always in the list.
 function saveDraft() { if (S.draft && !S.invoices.includes(S.draft)) S.invoices.push(S.draft); persist(); }
-function markSent(d) { d.sent = true; d.sentAt = todayISO(); if (!(d.invNo || '').trim()) d.invNo = autoNo(d); persist(); }
+function markSent(d) {
+  d.sent = true; d.sentAt = todayISO();
+  if (!(d.invNo || '').trim()) d.invNo = autoNo(d);
+  if (!d.bankId) d.bankId = docBank(d).id || '';   // keeps the account it was sent with, even if the student's usual one changes later
+  persist();
+}
 
 /* ---------- This month ---------- */
 // What each student needs this month, based on their billing style.
@@ -1096,26 +1114,45 @@ function renderWelcome() {
   $('#wizBack').hidden = wizStep === 1;
   $('#wizNext').textContent = wizStep === 3 ? 'Done ✓' : 'Next';
   $('#wizBanks').innerHTML = S.tutor.banks.map((b, i) => `<div class="wizrow" data-wi="${i}">
-      <div><label>Bank</label><input data-bf="bank" value="${esc(b.bank)}"></div>
+      <div><label>Bank</label><input data-bf="bank" value="${esc(b.bank)}" placeholder="Bank name"></div>
       <div><label>Account no.</label><input data-bf="accNo" value="${esc(b.accNo)}"></div>
-      <div><label>Account name</label><input data-bf="accName" value="${esc(b.accName || S.tutor.name)}"></div></div>`).join('');
+      <div><label>Account name</label><input data-bf="accName" value="${esc(b.accName || S.tutor.name)}"></div>
+      ${i ? `<button class="x danger" data-act="wizDelBank" title="Remove this account" aria-label="Remove this account">✕</button>` : '<span></span>'}</div>`).join('');
+  const manyBanks = S.tutor.banks.length > 1;
   $('#wizStudents').innerHTML = S.students.map((s, i) => `<div class="wizstu" data-si="${i}">
-      <div><b>${esc(s.name)}</b><br><small class="hint">${esc(s.level)}</small></div>
+      <div><b>${esc(s.name)}</b>${s.level ? ` <span class="hint">(${esc(s.level)})</span>` : ''}${manyBanks ? `<br><small class="hint">pays into ${esc(bankLabel(bankById(s.bankId)))}</small>` : ''}</div>
       <div class="hint" style="margin:0">${esc(PLANS[s.plan].label)}</div>
       <div><label style="margin-top:0">RM / session</label><input type="number" min="0" step="any" data-f="rate" value="${esc(s.rate)}"></div></div>`).join('');
   if (!$('#wizPlan').options.length) $('#wizPlan').innerHTML = Object.entries(PLANS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('');
+  const keep = $('#wizBank').value;
+  $('#wizBank').innerHTML = S.tutor.banks.map(b => `<option value="${b.id}">${esc(bankLabel(b))}</option>`).join('');
+  if (keep && S.tutor.banks.some(b => b.id === keep)) $('#wizBank').value = keep;
+  $('#wizAddRow').classList.toggle('banks', manyBanks);
+  $('#wizAddRow .wizbank').hidden = !manyBanks;
 }
+$('#wizAddBank').onclick = () => {
+  S.tutor.banks.push({ id: uid(), bank: '', accNo: '', accName: S.tutor.name || '' });
+  persist(); renderWelcome();
+  $('#wizBanks .wizrow:last-child input').focus();
+};
+$('#wizBanks').addEventListener('click', e => {
+  if (e.target.dataset.act !== 'wizDelBank') return;
+  const i = +e.target.closest('[data-wi]').dataset.wi, gone = S.tutor.banks[i];
+  S.tutor.banks.splice(i, 1);
+  for (const s of S.students) if (s.bankId === gone.id) s.bankId = S.tutor.banks[0].id;
+  persist(); renderWelcome();
+});
 function wizAddStudent() {
   const name = $('#wizName').value.trim();
   if (!name) { $('#wizName').focus(); return false; }
-  S.students.push({ ...studentDefaults(), name, filePrefix: name, plan: $('#wizPlan').value,
-    rate: Number($('#wizRate').value) || 0, bankId: S.tutor.banks[0]?.id || '' });
-  $('#wizName').value = ''; $('#wizRate').value = '';
+  S.students.push({ ...studentDefaults(), name, level: $('#wizLevel').value.trim(), filePrefix: name, plan: $('#wizPlan').value,
+    rate: Number($('#wizRate').value) || 0, bankId: $('#wizBank').value || S.tutor.banks[0]?.id || '' });
+  $('#wizName').value = ''; $('#wizLevel').value = ''; $('#wizRate').value = '';
   persist(); renderWelcome(); $('#wizName').focus();
   return true;
 }
 $('#wizAdd').onclick = wizAddStudent;
-$('#wizName').addEventListener('keydown', e => { if (e.key === 'Enter') wizAddStudent(); });
+for (const id of ['#wizName', '#wizLevel', '#wizRate']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') wizAddStudent(); });
 $('#wizBanks').addEventListener('input', e => {
   const row = e.target.closest('[data-wi]'); if (!row) return;
   S.tutor.banks[+row.dataset.wi][e.target.dataset.bf] = e.target.value; persist();
@@ -1214,7 +1251,7 @@ function setPageStyle(no, footer) {
 }
 function renderPreview() {
   const d = S.draft; if (!d) return;
-  const t = S.tutor, st = student(d.studentId), bank = bankOf(st), no = invNo(d), tt = totals(d);
+  const t = S.tutor, st = student(d.studentId), bank = docBank(d), no = invNo(d), tt = totals(d);
   const H = { end: ['Student Detail', 'Lesson Detail'], start: ['Student', 'Timeslot booked'], summary: ['Students’ Detail', 'Lessons Detail'] }[d.kind];
   const table = d.kind === 'start' ? tableStart(d, tt) : d.kind === 'summary' ? tableSummary(d) : tableEnd(d, tt);
   $('#paper').innerHTML = `
@@ -1255,6 +1292,11 @@ function syncInputs() {
   document.querySelectorAll('[data-bind]').forEach(el => { if (el !== document.activeElement) el.value = getPath(el.dataset.bind) ?? ''; });
   const d = S.draft; if (!d) return;
   $('#kindSel').value = d.kind;
+  const usual = bankOf(student(d.studentId));
+  $('#docBankSel').innerHTML = `<option value="">Student’s usual account: ${esc(bankLabel(usual))}</option>` +
+    S.tutor.banks.map(b => `<option value="${b.id}">${esc(bankLabel(b))}</option>`).join('');
+  $('#docBankSel').value = d.bankId && d.bankId !== usual.id && S.tutor.banks.some(b => b.id === d.bankId) ? d.bankId : '';
+  $('#docBankHint').textContent = S.tutor.banks.length > 1 ? 'Only changes this document. Add accounts in Settings › Bank accounts.' : 'You have one account. Add more in Settings › Bank accounts.';
   document.querySelectorAll('[data-show]').forEach(el => { el.hidden = !el.dataset.show.split(' ').includes(d.kind); });
   const st = student(d.studentId);
   $('#schedHint').textContent = st.schedule.length
@@ -1407,6 +1449,11 @@ function renderSettings() {
 }
 
 /* ---------- document type (More options) ---------- */
+$('#docBankSel').onchange = e => {
+  S.draft.bankId = e.target.value;
+  persist(); renderPreview();
+  toast(e.target.value ? `This document now shows ${bankLabel(docBank(S.draft))}` : 'Back to the student’s usual account');
+};
 $('#kindSel').onchange = e => {
   const d = S.draft, k = e.target.value;
   d.kind = k;
@@ -1656,9 +1703,10 @@ new MutationObserver(() => { if ($('#ndStudent') && !$('#ndMonth').value) $('#nd
 
 /* ---------- checks before saving ---------- */
 function checkDoc(d) {
-  const st = student(d.studentId), bank = bankOf(st), issues = [];
+  const st = student(d.studentId), bank = docBank(d), issues = [];
   if (!S.tutor.name.trim()) issues.push('Your name is empty (Settings › My details).');
   if (isInvoice(d)) {
+    if (!(st.code || '').trim() && !(d.invNo || '').trim()) issues.push(`${st.name} has no short code, so the invoice number would end in “/” (add one in Settings › Students).`);
     if (!bank.accNo) issues.push(`The account number for ${bank.bank || 'the bank'} is empty (Settings › Bank accounts).`);
     if (!(Number(d.rate) > 0)) issues.push(`The price per session is RM ${num(d.rate)}.`);
     if (!(totals(d).grand > 0)) issues.push('The total to pay is RM 0.');
@@ -1742,7 +1790,7 @@ function renderSendPanel() {
 }
 function hidePdfResult() { $('#pdfResult').hidden = true; }
 function waMessage(d) {
-  const st = student(d.studentId), bank = bankOf(st), tt = totals(d);
+  const st = student(d.studentId), bank = docBank(d), tt = totals(d);
   const vars = { student: st.name, month: monthName(d.month), invoice: invNo(d), total: 'RM ' + num(tt.grand), sessions: num(tt.sessions),
     rate: 'RM ' + num(d.rate), bank: bank.bank || '', account: bank.accNo || '', accountName: bank.accName || '', tutor: S.tutor.name, thanks: S.tutor.thanks };
   const tpl = isInvoice(d) ? S.prefs.waInvoice : S.prefs.waSummary;

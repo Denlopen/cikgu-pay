@@ -25,6 +25,42 @@
       out.tour = { shown: !$('#tour').hidden, steps: [] };
       for (let i = 0; i < 20 && !$('#tour').hidden; i++) { out.tour.steps.push($('#tourTitle').textContent); $('#tourNext').click(); }
       out.tour.done = S.prefs.toursDone;
+      // First-run setup, driven through its own buttons: two bank accounts, a student with a level and the 2nd account
+      const type = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+      showView('home');
+      const wiz = { shown: !$('#welcome').hidden };
+      $('#wizNext').click();                                   // step 2: banks
+      $('#wizAddBank').click();
+      const rows = document.querySelectorAll('#wizBanks .wizrow');
+      type(rows[1].querySelector('[data-bf=bank]'), 'CIMB'); type(rows[1].querySelector('[data-bf=accNo]'), '8000 1111 22');
+      wiz.banks = S.tutor.banks.map(b => b.bank + ' ' + b.accNo);
+      $('#wizNext').click();                                   // step 3: students
+      wiz.bankPickerShown = !$('#wizAddRow .wizbank').hidden;
+      $('#wizName').value = 'Student W'; $('#wizLevel').value = 'Year 10'; $('#wizPlan').value = 'end'; $('#wizRate').value = '90';
+      $('#wizBank').value = S.tutor.banks[1].id; $('#wizAdd').click();
+      const sw = S.students.find(x => x.name === 'Student W');
+      wiz.student = sw && { level: sw.level, rate: sw.rate, bank: bankById(sw.bankId).bank, plan: sw.plan };
+      wiz.listText = $('#wizStudents').innerText.replace(/\s+/g, ' ').trim();
+      $('#wizNext').click();                                   // Done
+      wiz.done = S.prefs.setupDone && $('#welcome').hidden;
+      sw.code = 'TSW';
+      // Its invoice shows "Student W (Year 10)" and the CIMB account; one invoice can use another account
+      const dw = createDoc(sw.id, 'end', '2026-09'); dw.lessons = [{ ...lessonDefaults(), date: '2026-09-02', subject: 'Math', topic: 'Sets' }]; renderDoc();
+      const paperText = () => $('#paper').innerText;
+      wiz.paper = { nameLevel: paperText().includes('Student W (Year 10)'), cimb: paperText().includes('8000 1111 22') };
+      $('#docBankSel').value = S.tutor.banks[0].id; $('#docBankSel').dispatchEvent(new Event('change'));
+      wiz.override = { first: paperText().includes(S.tutor.banks[0].accNo) && !paperText().includes('8000 1111 22'), wa: waMessage(dw).includes(S.tutor.banks[0].accNo), student: bankById(sw.bankId).bank };
+      $('#docBankSel').value = ''; $('#docBankSel').dispatchEvent(new Event('change'));
+      wiz.backToUsual = paperText().includes('8000 1111 22');
+      // a sent invoice keeps its account when the student's usual account changes
+      markSent(dw); sw.bankId = S.tutor.banks[0].id; renderDoc();
+      wiz.keptAfterSend = paperText().includes('8000 1111 22');
+      sw.code = ''; wiz.noCodeWarning = checkDoc({ ...dw, invNo: '' }).some(x => x.includes('short code')); sw.code = 'TSW';
+      S.invoices.splice(S.invoices.indexOf(dw), 1); S.students.splice(S.students.indexOf(sw), 1); S.draft = null; showView('home');
+      out.wizard = wiz;
+      if (!(wiz.shown && wiz.banks.length === 2 && wiz.bankPickerShown && wiz.student?.level === 'Year 10' && wiz.student.bank === 'CIMB' && wiz.done
+            && wiz.paper.nameLevel && wiz.paper.cimb && wiz.override.first && wiz.override.wa && wiz.backToUsual && wiz.keptAfterSend && wiz.noCodeWarning))
+        errors.push('setup / bank account check failed');
       // Test fixtures: three made-up students, one per billing style (the app itself starts with none)
       const fx = [
         { name: 'Student A', code: 'TSA', rate: 100, plan: 'end', filePrefix: 'Student A', fileLabel: 'Invoice', firstSeq: 1 },
