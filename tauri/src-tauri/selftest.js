@@ -29,7 +29,12 @@
       const th = document.querySelector('#view-settings [data-bind="tutor.thanks"]');
       th.value = 'Thank you very much'; th.dispatchEvent(new Event('input', { bubbles: true }));
       th.setSelectionRange(th.value.length, th.value.length); emojiTarget = th; insertEmoji(' 🌸'.trim());
-      out.emoji = { thanks: S.tutor.thanks, buttons: document.querySelectorAll('.emoji-btn').length, recent: S.prefs.recentEmoji };
+      showView('settings'); th.parentElement.querySelector('.emoji-btn').click();
+      const tabs = ['open:' + !$('#emojiPop').hidden + ' ih:' + innerHeight];
+      for (const c of ['1', '2', '-1']) { document.querySelector('#emojiCats [data-cat="' + c + '"]').click(); tabs.push(($('#emojiPop').hidden ? 'CLOSED ' : '') + $('#emojiTitle').textContent); }
+      closeEmoji(); showView('home');
+      out.emoji = { thanks: S.tutor.thanks, buttons: document.querySelectorAll('.emoji-btn').length, recent: S.prefs.recentEmoji, tabs };
+      if (tabs.some(t => t.startsWith('CLOSED') || t.startsWith('open:false'))) errors.push('emoji picker closed when a category was clicked');
       persist();
       const ids = Object.fromEntries(S.students.map(s => [s.name, s.id]));
       const diag = [];

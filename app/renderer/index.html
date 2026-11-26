@@ -1744,7 +1744,7 @@ function placeEmoji() {
   const pop = $('#emojiPop');
   if (pop.hidden || !emojiBtn) return;
   const r = emojiBtn.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
-  if (!emojiBtn.isConnected || r.bottom < 0 || r.top > innerHeight) { closeEmoji(); return; }
+  if (!emojiBtn.isConnected || (innerHeight > 0 && (r.bottom < 0 || r.top > innerHeight))) { closeEmoji(); return; }
   const left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8));
   const top = r.bottom + 6 + h <= innerHeight - 8 ? r.bottom + 6 : Math.max(8, r.top - h - 6);
   Object.assign(pop.style, { left: left + 'px', top: top + 'px' });
@@ -1768,11 +1768,14 @@ function insertEmoji(e) {
 document.addEventListener('click', e => {
   const btn = e.target.closest('.emoji-btn');
   if (btn) { e.preventDefault(); openEmoji(btn); return; }
-  if (!$('#emojiPop').hidden && !e.target.closest('#emojiPop')) closeEmoji();
+  // composedPath() is recorded when the click starts, so it still counts as "inside" even when the
+  // clicked button was redrawn (removed from the page) by the picker's own click handler.
+  if (!$('#emojiPop').hidden && !e.composedPath().includes($('#emojiPop'))) closeEmoji();
 });
 $('#emojiPop').addEventListener('click', e => {
+  e.stopPropagation();   // a click inside the picker must never reach the "click outside closes it" handler
   const c = e.target.closest('[data-cat]');
-  if (c) { emojiCat = +c.dataset.cat; $('#emojiSearch').value = ''; renderEmojiGrid(); return; }
+  if (c) { emojiCat = +c.dataset.cat; $('#emojiSearch').value = ''; renderEmojiGrid(); $('#emojiCats .on')?.focus(); $('#emojiGrid').scrollTop = 0; return; }
   const b = e.target.closest('[data-e]');
   if (b) { insertEmoji(b.dataset.e); if (!e.shiftKey) closeEmoji(); }   // Shift-click adds several
 });
