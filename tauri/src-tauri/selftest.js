@@ -1,13 +1,15 @@
 // Automated check for the Tauri build. main.rs injects this into the page ONLY when
 // INVOICE_SELFTEST is set. Same three flows as the Electron selftest.
-// Phase 1: run the flows + export PDFs, then reload.  Phase 2: check the data survived, then quit.
+// Phase 1: run the flows + export PDFs, move the invoices to another folder, "unplug" that folder, reload.
+// Phase 2: the app must say it can't find the folder and refuse to save; "plug it back in", click Try again.
+// Phase 3: the data must be back; move everything to the default folder again; check, then quit.
 (async () => {
   const invoke = window.__TAURI__.core.invoke;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const report = (key, value) => invoke('selftest_report', { key, value });
   try {
-    for (let i = 0; i < 200 && !window.__ready; i++) await sleep(100);
-    if (!window.__ready) throw new Error('page never became ready');
+    for (let i = 0; i < 200 && !window.__ready && !window.__missingFolder; i++) await sleep(100);
+    if (!window.__ready && !window.__missingFolder) throw new Error('page never became ready');
     const phase = await invoke('selftest_phase');
 
     if (phase === 1) {
@@ -84,13 +86,49 @@
       out.history = S.invoices.map(i => i.kind + ' ' + invNo(i) + (i.paid ? ' paid' : ''));
       out.resultBox = document.querySelector('#pdfResult').innerText;
       out.userAgent = navigator.userAgent;
+      // Storage folder: move everything to another folder, as if she picked one in Settings
+      const info0 = await api.storageInfo();
+      const sep = info0.dir.includes('\\') ? '\\' : '/';
+      const picked = info0.default_dir + '-alt';
+      await invoke('selftest_mkdir', { path: picked });
+      const plan = await api.storagePlan(picked);
+      const mv = await api.storageMove(plan.target);
+      retargetPdfs(mv.old, mv.new);
+      const info1 = await renderStorage();
+      openDoc(d1); const extraPdf = await pdf();   // new PDFs go to the new folder
+      out.storage = { plan, moved: mv, info: info1, extraPdf,
+        pdfPathsUpdated: S.invoices.filter(d => d.pdfPath).every(d => d.pdfPath.startsWith(mv.new)),
+        insideProblem: (await api.storagePlan(mv.new + sep + '2026-08')).problem, samePlan: (await api.storagePlan(mv.new)).same,
+        cardPath: $('#storagePath').textContent };
+      if (!(plan.target === picked + sep + 'Tuition Invoices' && !plan.has_data && mv.files >= 5 && !mv.leftover && !info1.is_default
+            && info1.dir === mv.new && extraPdf.startsWith(mv.new) && out.storage.pdfPathsUpdated && out.storage.insideProblem && out.storage.samePlan))
+        errors.push('storage move check failed');
       out.errors = errors;
       out.printState = diag;
       await report('run', out);
-      await sleep(500);              // let the queued saves reach the disk
+      await sleep(600);              // let the queued saves reach the disk
+      // "unplug the drive"
+      await invoke('selftest_rename', { from: mv.new, to: mv.new + '-unplugged' });
+      await report('storageDir', mv.new);
       location.reload();
+    } else if (phase === 2) {
+      const dir = await invoke('selftest_report', { key: 'phase2', value: 'started' }).then(() => window.__missingFolder);
+      let refused = null;
+      try { await invoke('save_data', { text: '{}' }); refused = false; } catch (e) { refused = String(e); }
+      const p2 = { missingFolder: dir, dialog: $('#modal').hidden ? null : $('#dlgTitle').textContent,
+        buttons: [...document.querySelectorAll('#dlgBtns button')].map(b => b.textContent), saveRefused: refused, ready: !!window.__ready };
+      await report('missing', p2);
+      // "plug it back in" and press Try again
+      await invoke('selftest_rename', { from: dir + '-unplugged', to: dir });
+      [...document.querySelectorAll('#dlgBtns button')].find(b => b.textContent === 'Try again').click();
     } else {
       await sleep(900);   // a tour would have started by now
+      const back = await api.storageInfo();
+      const reset = await api.storageReset();   // "Move back to the default folder"
+      const after = await api.storageInfo();
+      await report('storageBack', { foundAgain: back.dir, invoices: S.invoices.length, reset, nowDefault: after.is_default, dir: after.dir });
+      retargetPdfs(reset.old, reset.new);
+      await sleep(400);
       await report('afterReload', { tourShownAgain: !$('#tour').hidden, toursDone: S.prefs.toursDone, tutor: S.tutor.name, invoices: S.invoices.length, docs: S.invoices.map(d => d.kind + ' ' + invNo(d) + ' ' + docStatus(d).label), view,
         theme: document.documentElement.dataset.theme + '/' + document.documentElement.dataset.accent, savedPrefs: S.prefs });
       await invoke('selftest_finish');

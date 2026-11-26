@@ -17,11 +17,11 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 // ---------- where things live (same layout as the Electron app) ----------
-// Documents/Tuition Invoices/
+// Documents/Tuition Invoices/   (default; the user can pick another folder in Settings)
 //   invoice-data.json        <- all students / invoices / settings
 //   backups/                 <- one copy per day, last 30 kept
 //   2026-08/<name>.pdf       <- exported documents, one folder per month
-fn root_dir(app: &AppHandle) -> PathBuf {
+fn default_dir(app: &AppHandle) -> PathBuf {
     if let Some(dir) = std::env::var_os("INVOICE_DATA_DIR") {
         return PathBuf::from(dir);
     }
@@ -29,6 +29,45 @@ fn root_dir(app: &AppHandle) -> PathBuf {
         .document_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("Tuition Invoices")
+}
+
+/// The chosen folder is remembered in a tiny file in the app's own settings folder
+/// (%APPDATA%\<identifier>\storage.json). It can't live inside the data folder: that's what it points to.
+fn storage_config_file(app: &AppHandle) -> PathBuf {
+    if let Some(dir) = std::env::var_os("INVOICE_DATA_DIR") {
+        // tests: keep it next to the test data, never in the real settings folder
+        let mut s = dir; s.push("-config"); return PathBuf::from(s).join("storage.json");
+    }
+    app.path().app_config_dir().unwrap_or_else(|_| std::env::temp_dir()).join("storage.json")
+}
+fn read_custom_dir(app: &AppHandle) -> Option<PathBuf> {
+    let text = fs::read_to_string(storage_config_file(app)).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    v.get("dir").and_then(|d| d.as_str()).filter(|d| !d.is_empty()).map(PathBuf::from)
+}
+fn write_custom_dir(app: &AppHandle, dir: Option<&Path>) -> Result<(), String> {
+    let f = storage_config_file(app);
+    match dir {
+        None => match fs::remove_file(&f) { Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()), _ => Ok(()) },
+        Some(d) => write_atomic(&f, &serde_json::json!({ "dir": path_string(d) }).to_string()).map_err(|e| e.to_string()),
+    }
+}
+
+/// Where the data is right now. The Mutex also makes saving and moving take turns,
+/// so nothing is written into the old folder while it is being moved.
+struct Storage {
+    root: Mutex<PathBuf>,
+    custom: Mutex<bool>,
+}
+fn root_dir(app: &AppHandle) -> PathBuf {
+    app.state::<Storage>().root.lock().unwrap().clone()
+}
+/// A folder picked by the user that can't be found (USB drive unplugged, cloud drive not signed in…).
+/// Nothing is saved while this is the case, so data never ends up in the wrong place.
+fn missing_root(app: &AppHandle) -> Option<PathBuf> {
+    let st = app.state::<Storage>();
+    let root = st.root.lock().unwrap().clone();
+    (*st.custom.lock().unwrap() && !root.is_dir()).then_some(root)
 }
 fn data_file(app: &AppHandle) -> PathBuf {
     root_dir(app).join("invoice-data.json")
@@ -107,7 +146,7 @@ fn clean_name(s: &str) -> String {
 fn valid_month(m: &str) -> bool {
     m.len() == 7 && m.chars().enumerate().all(|(i, c)| if i == 4 { c == '-' } else { c.is_ascii_digit() })
 }
-/// The page may only open/reveal files inside Documents/Tuition Invoices.
+/// The page may only open/reveal files inside the invoices folder.
 fn is_inside(app: &AppHandle, p: &str) -> bool {
     let p = Path::new(p);
     p.starts_with(root_dir(app)) && !p.components().any(|c| matches!(c, Component::ParentDir))
@@ -120,10 +159,14 @@ struct Loaded {
     path: String,
     recovered: Option<String>,
     damaged: Option<String>,
+    missing: Option<String>,
 }
 
 #[tauri::command]
 fn load_data(app: AppHandle) -> Loaded {
+    if let Some(dir) = missing_root(&app) {
+        return Loaded { path: path_string(&data_file(&app)), missing: Some(path_string(&dir)), ..Default::default() };
+    }
     let f = data_file(&app);
     let path = path_string(&f);
     if !f.exists() {
@@ -143,7 +186,7 @@ fn load_data(app: AppHandle) -> Loaded {
         if let Ok(text) = fs::read_to_string(backup_dir(&app).join(&name)) {
             if let Ok(data) = serde_json::from_str::<Value>(&text) {
                 let _ = write_atomic(&f, &text);
-                return Loaded { data: Some(data), path, recovered: Some(name), damaged };
+                return Loaded { data: Some(data), path, recovered: Some(name), damaged, missing: None };
             }
         }
     }
@@ -153,7 +196,12 @@ fn load_data(app: AppHandle) -> Loaded {
 #[tauri::command]
 fn save_data(app: AppHandle, text: String) -> Result<(), String> {
     serde_json::from_str::<Value>(&text).map_err(|e| format!("refusing to save invalid data: {e}"))?;
-    write_atomic(&data_file(&app), &text).map_err(|e| e.to_string())
+    if let Some(dir) = missing_root(&app) {
+        return Err(format!("the invoices folder can't be found: {}", path_string(&dir)));
+    }
+    let st = app.state::<Storage>();
+    let root = st.root.lock().unwrap();   // waits while a move is in progress
+    write_atomic(&root.join("invoice-data.json"), &text).map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -244,6 +292,215 @@ async fn import_backup(app: AppHandle) -> Result<Option<String>, String> {
     fs::read_to_string(p).map(Some).map_err(|e| e.to_string())
 }
 
+
+// ---------- choosing where the invoices are kept ----------
+#[derive(Serialize)]
+struct StorageInfo {
+    dir: String,
+    default_dir: String,
+    is_default: bool,
+    missing: bool,
+}
+#[tauri::command]
+fn storage_info(app: AppHandle) -> StorageInfo {
+    let dir = root_dir(&app);
+    let def = default_dir(&app);
+    StorageInfo { is_default: dir == def, missing: missing_root(&app).is_some(), dir: path_string(&dir), default_dir: path_string(&def) }
+}
+
+#[tauri::command]
+async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
+    let start = root_dir(&app);
+    let start = if start.is_dir() { start.parent().map(Path::to_path_buf).unwrap_or(start) } else { app.path().document_dir().unwrap_or(start) };
+    let picked = app.dialog().file().set_title("Choose where to keep your invoices").set_directory(start).blocking_pick_folder();
+    let Some(picked) = picked else { return Ok(None) };
+    picked.into_path().map(|p| Some(path_string(&p))).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+struct StoragePlan {
+    target: String,       // the folder that will hold the data
+    has_data: bool,       // it already contains invoices
+    same: bool,           // it's the folder in use now
+    problem: Option<String>,
+}
+/// The picked folder becomes the place for a "Tuition Invoices" folder, unless the picked folder
+/// already holds invoices (or is called that). So picking "My Drive" never scatters files into it.
+fn plan_target(picked: &Path) -> PathBuf {
+    let named = picked.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("Tuition Invoices"));
+    if picked.join("invoice-data.json").is_file() || named { picked.to_path_buf() } else { picked.join("Tuition Invoices") }
+}
+/// A comparable form of a path. Windows writes existing folders as `\\?\C:\...` after canonicalize()
+/// but a folder that doesn't exist yet can't be canonicalized, so canonicalize the deepest part that
+/// exists and add the rest back on. Then "is this inside that?" works whether or not the folders exist.
+fn norm(p: &Path) -> PathBuf {
+    let mut existing = p.to_path_buf();
+    let mut rest: Vec<std::ffi::OsString> = vec![];
+    loop {
+        if let Ok(c) = fs::canonicalize(&existing) {
+            let mut out = c;
+            for part in rest.iter().rev() { out.push(part); }
+            return out;
+        }
+        match (existing.file_name().map(|n| n.to_os_string()), existing.parent().map(Path::to_path_buf)) {
+            (Some(name), Some(parent)) => { rest.push(name); existing = parent; }
+            _ => return p.to_path_buf(),
+        }
+    }
+}
+#[tauri::command]
+fn storage_plan(app: AppHandle, picked: String) -> StoragePlan {
+    let picked = PathBuf::from(picked);
+    let target = plan_target(&picked);
+    let current = root_dir(&app);
+    let (t, c) = (norm(&target), norm(&current));
+    let problem = if !picked.is_dir() {
+        Some("That folder can't be found.".into())
+    } else if t != c && t.starts_with(&c) {
+        Some("That folder is inside the current invoices folder. Please choose a folder somewhere else.".into())
+    } else if fs::create_dir_all(&target).and_then(|_| fs::write(target.join(".write-test"), b"ok")).and_then(|_| fs::remove_file(target.join(".write-test"))).is_err() {
+        let _ = fs::remove_dir(&target); // only removes it if we just created it empty
+        Some("The app can't save files in that folder (it may be read-only).".into())
+    } else {
+        None
+    };
+    let has_data = target.join("invoice-data.json").is_file();
+    if !has_data && problem.is_none() && t != c { let _ = fs::remove_dir(&target); } // don't leave an empty folder if she cancels
+    StoragePlan { same: t == c, has_data, problem, target: path_string(&target) }
+}
+
+/// Every file under `dir`, as paths relative to it.
+fn all_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut out = vec![];
+    let mut stack = vec![PathBuf::new()];
+    while let Some(rel) = stack.pop() {
+        for e in fs::read_dir(dir.join(&rel))? {
+            let e = e?;
+            let r = rel.join(e.file_name());
+            if e.file_type()?.is_dir() { stack.push(r) } else { out.push(r) }
+        }
+    }
+    Ok(out)
+}
+
+#[derive(Serialize)]
+struct MoveResult {
+    old: String,
+    new: String,
+    files: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    leftover: Option<String>,   // old copies that couldn't be removed (e.g. a PDF open in a reader)
+}
+/// Copy everything to the new folder, check every file arrived intact, switch over, then remove the
+/// old copies. If anything goes wrong before the switch, the new copies are removed and nothing changes.
+fn move_storage(app: &AppHandle, target: PathBuf, make_default: bool) -> Result<MoveResult, String> {
+    let st = app.state::<Storage>();
+    let mut root = st.root.lock().unwrap();   // no saving while moving
+    let old = root.clone();
+    if norm(&old) == norm(&target) {
+        return Err("That is already the folder in use.".into());
+    }
+    if target.join("invoice-data.json").exists() {
+        return Err("exists".into());
+    }
+    let files = if old.is_dir() { all_files(&old).map_err(|e| format!("Couldn't read the current folder: {e}"))? } else { vec![] };
+    fs::create_dir_all(&target).map_err(|e| format!("Couldn't create the new folder: {e}"))?;
+    let mut copied: Vec<PathBuf> = vec![];
+    let undo = |copied: &[PathBuf]| { for f in copied.iter().rev() { let _ = fs::remove_file(target.join(f)); } };
+    for rel in &files {
+        let (from, to) = (old.join(rel), target.join(rel));
+        if to.exists() {
+            continue; // never overwrite something that is already there (e.g. a PDF with the same name)
+        }
+        let res = to.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| fs::copy(&from, &to)).and_then(|_| {
+            if fs::read(&from)? == fs::read(&to)? { Ok(()) } else { Err(std::io::Error::other("the copy is different from the original")) }
+        });
+        if let Err(e) = res {
+            let _ = fs::remove_file(&to);
+            undo(&copied);
+            return Err(format!("Couldn't copy {}: {e}. Nothing was changed.", path_string(rel)));
+        }
+        copied.push(rel.clone());
+    }
+    let switch = if make_default { write_custom_dir(app, None) } else { write_custom_dir(app, Some(&target)) };
+    if let Err(e) = switch {
+        undo(&copied);
+        return Err(format!("Couldn't remember the new folder: {e}. Nothing was changed."));
+    }
+    *root = target.clone();
+    *st.custom.lock().unwrap() = !make_default;
+    // Switched. Now tidy up the old folder; failures here only leave harmless copies behind.
+    for rel in &copied {
+        let _ = fs::remove_file(old.join(rel));
+    }
+    if old.is_dir() {
+        // remove the emptied month/backup folders, deepest first, and the old folder itself
+        let mut dirs: Vec<PathBuf> = files.iter().filter_map(|f| f.parent().map(Path::to_path_buf)).filter(|d| !d.as_os_str().is_empty()).collect();
+        dirs.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
+        dirs.dedup();
+        for d in dirs { let _ = fs::remove_dir(old.join(d)); }
+        let _ = fs::remove_dir(&old);
+    }
+    // anything still there (a PDF open in a reader, or a file that already existed in the new folder) stays put
+    let leftover = (old.is_dir() && all_files(&old).is_ok_and(|f| !f.is_empty())).then(|| path_string(&old));
+    Ok(MoveResult { old: path_string(&old), new: path_string(&target), files: copied.len(), leftover })
+}
+
+#[tauri::command]
+fn storage_move(app: AppHandle, target: String) -> Result<MoveResult, String> {
+    let target = PathBuf::from(target);
+    let make_default = norm(&target) == norm(&default_dir(&app));
+    move_storage(&app, target, make_default)
+}
+#[tauri::command]
+fn storage_reset(app: AppHandle) -> Result<MoveResult, String> {
+    let def = default_dir(&app);
+    move_storage(&app, def, true)
+}
+/// Switch to a folder that already holds invoices (e.g. on a new laptop, or after the folder
+/// was moved by hand). The data in the current folder is left exactly where it is.
+#[tauri::command]
+fn storage_use(app: AppHandle, target: String) -> Result<String, String> {
+    let target = PathBuf::from(target);
+    if !target.join("invoice-data.json").is_file() {
+        return Err("No invoices were found in that folder.".into());
+    }
+    let st = app.state::<Storage>();
+    let mut root = st.root.lock().unwrap();
+    let is_default = norm(&target) == norm(&default_dir(&app));
+    write_custom_dir(&app, if is_default { None } else { Some(&target) })?;
+    *root = target.clone();
+    *st.custom.lock().unwrap() = !is_default;
+    Ok(path_string(&target))
+}
+/// Forget a folder that can't be found and go back to Documents\Tuition Invoices (nothing is moved).
+#[tauri::command]
+fn storage_forget(app: AppHandle) -> Result<String, String> {
+    let st = app.state::<Storage>();
+    let mut root = st.root.lock().unwrap();
+    write_custom_dir(&app, None)?;
+    *root = default_dir(&app);
+    *st.custom.lock().unwrap() = false;
+    Ok(path_string(&root))
+}
+
+/// Self-test only: rename a folder (to pretend a drive was unplugged and plugged back in).
+#[tauri::command]
+fn selftest_rename(from: String, to: String) -> Result<(), String> {
+    if !selftest_mode() {
+        return Err("not in selftest mode".into());
+    }
+    fs::rename(from, to).map_err(|e| e.to_string())
+}
+/// Self-test only: create a folder to "pick".
+#[tauri::command]
+fn selftest_mkdir(path: String) -> Result<(), String> {
+    if !selftest_mode() {
+        return Err("not in selftest mode".into());
+    }
+    fs::create_dir_all(path).map_err(|e| e.to_string())
+}
+
 // ---------- self-test (only active when INVOICE_SELFTEST is set) ----------
 #[derive(Default)]
 struct Selftest {
@@ -252,7 +509,7 @@ struct Selftest {
 }
 
 fn write_selftest_result(app: &AppHandle, report: &serde_json::Map<String, Value>, extra_error: Option<&str>) -> bool {
-    let root = root_dir(app);
+    let root = default_dir(app);
     let mut out = report.clone();
     if let Some(e) = extra_error {
         out.insert("error".into(), e.into());
@@ -335,10 +592,18 @@ fn main() {
         .manage(Selftest::default())
         .invoke_handler(tauri::generate_handler![
             load_data, save_data, save_pdf, open_path, show_in_folder, open_folder, export_backup, import_backup,
-            selftest_phase, selftest_report, selftest_finish
+            storage_info, pick_folder, storage_plan, storage_move, storage_reset, storage_use, storage_forget,
+            selftest_phase, selftest_report, selftest_finish, selftest_rename, selftest_mkdir
         ])
         .setup(|app| {
-            if let Err(e) = daily_backup(app.handle()) {
+            let custom = read_custom_dir(app.handle());
+            app.manage(Storage {
+                root: Mutex::new(custom.clone().unwrap_or_else(|| default_dir(app.handle()))),
+                custom: Mutex::new(custom.is_some()),
+            });
+            if missing_root(app.handle()).is_some() {
+                eprintln!("invoices folder not found; backup skipped");
+            } else if let Err(e) = daily_backup(app.handle()) {
                 eprintln!("backup skipped: {e}");
             }
             if selftest_mode() {

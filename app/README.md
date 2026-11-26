@@ -21,9 +21,9 @@ Saving: every change is saved automatically ("✓ All changes saved" top-right).
 Each student also has their own bank account, title line, footer brand (or none) and PDF name pattern (e.g. `<name>_112026 - Invoice 02`).
 
 ## For the user
-- Install: run `Cikgu-Pay-Electron-Setup-1.3.0.exe`. It installs for the current user only, no admin needed, and adds Desktop and Start Menu shortcuts.
+- Install: run `Cikgu-Pay-Electron-Setup-1.4.0.exe`. It installs for the current user only, no admin needed, and adds Desktop and Start Menu shortcuts.
   - Windows may say "Windows protected your PC" because the app is unsigned. Click **More info → Run anyway**. This only happens the first time.
-- No install: `Cikgu-Pay-Electron-Portable-1.3.0.exe` runs directly (starts a few seconds slower).
+- No install: `Cikgu-Pay-Electron-Portable-1.4.0.exe` runs directly (starts a few seconds slower).
 - Everything lives in **Documents\Tuition Invoices\\**:
   - `invoice-data.json`: all students, invoices and settings (saved on every change)
   - `backups\`: a copy every day, the last 30 kept

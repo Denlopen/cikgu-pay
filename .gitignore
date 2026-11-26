@@ -6,7 +6,7 @@ tauri/ui/
 tauri/src-tauri/gen/
 
 # test runs (contain generated invoices / data files)
-.selftest/
+.selftest*/
 selftest-result.json
 
 # real data must never be committed

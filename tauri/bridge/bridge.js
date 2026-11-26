@@ -30,5 +30,15 @@
     openFolder: () => invoke('open_folder'),
     exportBackup: text => invoke('export_backup', { text }),
     importBackup: () => invoke('import_backup'),
+    // Where the invoices are kept (Settings › Where your invoices are saved). Tauri only.
+    storageInfo: () => invoke('storage_info'),
+    pickFolder: () => invoke('pick_folder'),
+    storagePlan: picked => invoke('storage_plan', { picked }),
+    storageMove: async target => { await saved(); return invoke('storage_move', { target }); },
+    storageReset: async () => { await saved(); return invoke('storage_reset'); },
+    storageUse: async target => { await saved(); return invoke('storage_use', { target }); },
+    storageForget: () => invoke('storage_forget'),
   };
+  // resolves once every queued save has reached the disk
+  async function saved() { while (writing || pending !== null) await new Promise(r => setTimeout(r, 20)); }
 })();

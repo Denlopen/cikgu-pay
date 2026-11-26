@@ -228,13 +228,14 @@ body.desktop .browser-only { display:none !important; }
 .toast.show.actionable { pointer-events:auto; }
 .toast button { background:transparent; color:inherit; border-color:currentColor; }
 .modal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:grid; place-items:center; z-index:40; padding:16px; }
-.dialog { background:var(--surface); color:var(--text); border-radius:14px; padding:20px 22px; width:min(460px, 100%); box-shadow:0 20px 60px rgba(0,0,0,.35); }
+.dialog { background:var(--surface); color:var(--text); border-radius:14px; padding:20px 22px; width:min(540px, 100%); box-shadow:0 20px 60px rgba(0,0,0,.35); }
 .dialog h3 { margin:0 0 8px; font-size:18px; }
 .dialog p { margin:6px 0; line-height:1.45; }
 .dialog ul { margin:8px 0; padding-left:20px; line-height:1.5; }
 .dialog .btns { justify-content:flex-end; margin-top:18px; }
 
 /* Emoji picker: a small 😊 button inside text fields, opening a popover */
+.pathbox { margin-top:10px; padding:9px 12px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border-soft); font-family:ui-monospace, Consolas, monospace; font-size:13px; word-break:break-all; }
 .emoji-wrap { position:relative; display:block; }
 .inline .emoji-wrap { flex:1; }
 .emoji-wrap > input { padding-right:40px; }
@@ -467,6 +468,17 @@ body.desktop .browser-only { display:none !important; }
         <code>{student}</code> <code>{month}</code> <code>{invoice}</code> <code>{total}</code> <code>{sessions}</code> <code>{bank}</code> <code>{account}</code> <code>{accountName}</code> <code>{thanks}</code></div>
       <label>For invoices</label><textarea rows="5" data-emoji data-bind="prefs.waInvoice"></textarea>
       <label>For lesson summaries</label><textarea rows="3" data-emoji data-bind="prefs.waSummary"></textarea>
+    </div></div>
+
+    <div class="card" id="storageCard" hidden><div class="body">
+      <div class="cardtitle">Where your invoices are saved</div>
+      <div class="hint">Your data, the daily backups and every PDF are kept in this folder. Tip: choose a folder inside Google Drive or OneDrive and they’re backed up online automatically.</div>
+      <div class="pathbox" id="storagePath"></div>
+      <div class="btns">
+        <button id="storageOpen">📂 Open folder</button>
+        <button id="storageChange">Change folder…</button>
+        <button id="storageDefault" hidden>Move back to the default folder</button>
+      </div>
     </div></div>
 
     <div class="card"><div class="body">
@@ -1311,7 +1323,7 @@ $('#addStudent').onclick = () => {
   $('#studentList .student:last-child input').focus();
 };
 function renderSettings() {
-  syncInputs(); renderBanks(); renderStudents(); renderThemePicker();
+  syncInputs(); renderBanks(); renderStudents(); renderThemePicker(); renderStorage();
 }
 
 /* ---------- document type (More options) ---------- */
@@ -1837,6 +1849,105 @@ document.addEventListener('scroll', placeEmoji, true);
 attachEmoji();
 new MutationObserver(() => attachEmoji($('#studentList'))).observe($('#studentList'), { childList: true });
 
+/* ---------- where the invoices are saved (Tauri desktop app only) ---------- */
+const hasStorage = () => !!(api && api.storageInfo);
+const errText = e => String(e && e.message || e).replace(/^Error:\s*/, '');
+async function renderStorage() {
+  if (!hasStorage()) return;
+  $('#storageCard').hidden = false;
+  $('#folderBtn')?.remove();   // "Open folder" lives in the storage card instead (.desktop-only would override [hidden])
+  const i = await api.storageInfo();
+  $('#storagePath').textContent = i.dir;
+  $('#storageDefault').hidden = i.is_default;
+  $('#storageDefault').title = 'Moves everything back to ' + i.default_dir;
+  dataPath = i.dir.replace(/[\\/]+$/, '') + (i.dir.includes('\\') ? '\\' : '/') + 'invoice-data.json';
+  $('#dataHint').textContent = `Everything is saved automatically in ${dataPath}. A copy is also kept each day in the “backups” folder next to it.`;
+  return i;
+}
+// After a move, PDFs saved earlier have a new address
+function retargetPdfs(oldDir, newDir) {
+  const fix = p => p && p.startsWith(oldDir) ? newDir + p.slice(oldDir.length) : p;
+  for (const d of S.invoices) d.pdfPath = fix(d.pdfPath);
+  lastPdf = fix(lastPdf);
+  persist();
+}
+async function runMove(job) {
+  const btns = ['#storageChange', '#storageDefault', '#storageOpen'].map(s => $(s));
+  btns.forEach(b => b.disabled = true);
+  toast('Moving your invoices…');
+  try {
+    const r = await job();
+    retargetPdfs(r.old, r.new);
+    await renderStorage();
+    if (view === 'editor') renderSendPanel();
+    btns.forEach(b => b.disabled = false);
+    $('#toast').classList.remove('show');
+    await notify('Invoices moved ✓', `${r.files} file${r.files === 1 ? '' : 's'} moved to ${r.new}.` +
+      (r.leftover ? ` A few files in ${r.leftover} couldn’t be removed (maybe a PDF is still open). Everything is in the new folder, so you can delete the old one yourself.` : ''));
+    return r;
+  } catch (e) {
+    if (errText(e) === 'exists') return 'exists';
+    notify('Couldn’t move your invoices', errText(e));
+    return null;
+  } finally { btns.forEach(b => b.disabled = false); }
+}
+async function switchTo(target, current) {
+  const ok = await dialog({ title: 'That folder already has invoices',
+    body: `<p><b>${esc(target)}</b> already contains invoices from Cikgu Pay.</p><p>Switch to those? The invoices you have now stay in <b>${esc(current)}</b>, untouched.</p>`,
+    buttons: [{ label: 'Cancel', value: false }, { label: 'Switch to that folder', value: true, primary: true }] });
+  if (!ok) return;
+  try { await api.storageUse(target); location.reload(); } catch (e) { notify('Couldn’t switch folders', errText(e)); }
+}
+async function changeFolder() {
+  const picked = await api.pickFolder().catch(e => { notify('Couldn’t open the folder picker', errText(e)); return null; });
+  if (!picked) return;
+  const plan = await api.storagePlan(picked);
+  const cur = (await api.storageInfo()).dir;
+  if (plan.problem) return notify('Can’t use that folder', plan.problem);
+  if (plan.same) return notify('Nothing to change', 'Your invoices are already saved in that folder.');
+  if (plan.has_data) return switchTo(plan.target, cur);
+  const go = await dialog({ title: 'Move your invoices?',
+    body: `<p>Everything (your data, backups and PDFs) will be moved</p><p>from <b>${esc(cur)}</b></p><p>to <b>${esc(plan.target)}</b></p><p class="hint">Each file is checked after copying, and nothing is deleted until everything has arrived safely.</p>`,
+    buttons: [{ label: 'Cancel', value: false }, { label: 'Move', value: true, primary: true }] });
+  if (!go) return;
+  if (await runMove(() => api.storageMove(plan.target)) === 'exists') switchTo(plan.target, cur);
+}
+async function moveBackToDefault() {
+  const i = await api.storageInfo();
+  const go = await ask('Move back to the default folder?', `Everything will be moved from ${i.dir} back to ${i.default_dir}.`, 'Move');
+  if (!go) return;
+  if (await runMove(() => api.storageReset()) === 'exists') switchTo(i.default_dir, i.dir);
+}
+if (hasStorage()) {
+  $('#storageChange').onclick = changeFolder;
+  $('#storageDefault').onclick = moveBackToDefault;
+  $('#storageOpen').onclick = () => api.openFolder();
+}
+// At start-up: the chosen folder is missing (USB drive unplugged, Google Drive not running…).
+// Nothing is loaded or saved until it's back, or she picks another folder / the default one.
+async function missingFolder(dir) {
+  window.__missingFolder = dir;
+  for (;;) {
+    const c = await dialog({ title: 'Can’t find your invoices folder',
+      body: `<p>Your invoices are saved in:</p><p class="pathbox">${esc(dir)}</p><p>but that folder can’t be found right now. If it’s on a USB drive, plug it in. If it’s in Google Drive or OneDrive, make sure that app is running and signed in. Then click <b>Try again</b>.</p>`,
+      buttons: [{ label: 'Choose another folder…', value: 'pick' }, { label: 'Use the default folder', value: 'default' }, { label: 'Try again', value: 'retry', primary: true }] });
+    if (c === 'retry') { location.reload(); return new Promise(() => {}); }
+    if (c === 'pick') {
+      const picked = await api.pickFolder().catch(() => null);
+      if (!picked) continue;
+      const plan = await api.storagePlan(picked);
+      if (!plan.has_data) { await notify('No invoices there', 'That folder doesn’t contain Cikgu Pay invoices. Choose the folder that has your “invoice-data.json” file.'); continue; }
+      await api.storageUse(plan.target); location.reload(); return new Promise(() => {});
+    }
+    if (c === 'default') {
+      const i = await api.storageInfo();
+      if (await ask('Use the default folder?', `The app will use ${i.default_dir} again. Nothing in the missing folder is deleted: you can switch back once it’s found (Settings › Where your invoices are saved).`, 'Use the default folder')) {
+        await api.storageForget(); location.reload(); return new Promise(() => {});
+      }
+    }
+  }
+}
+
 /* ---------- first-run tour ----------
    Two short tours: "home" runs the first time the app opens, "editor" the first time an invoice is opened.
    Each step points at one thing on screen; steps whose target isn't visible are skipped.
@@ -1987,6 +2098,7 @@ async function boot() {
     for (const b of [$('#printBtn'), $('#printBtn2')]) b.textContent = '📄 Save PDF';
     let r = null;
     try { r = await api.load(); } catch (err) { console.error(err); }
+    if (r && r.missing) await missingFolder(r.missing);   // only returns by reloading the page
     const data = r && r.data ? normalize(r.data) : null;
     S = validState(data) ? data : defaults();
     dataPath = (r && r.path) || '';

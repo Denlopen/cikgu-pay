@@ -15,6 +15,7 @@ Cikgu Pay is a small Windows app for private tutors. It makes monthly invoices a
 - Checks before saving (RM 0 price, empty account number, lessons without a date or topic), Undo for deletions, and a ready-to-paste WhatsApp message.
 - A short guided tour the first time the app opens, and another the first time an invoice is opened. You can replay them in Settings › Help.
 - Emoji picker (😊 button) in the closing message, note, greeting and WhatsApp message fields. Search it, or browse 6 categories and your recently used emoji. Works offline.
+- Choose where everything is kept (e.g. a Google Drive or OneDrive folder for automatic online backup). The app moves the files for you, checks each one, and tells you if the folder can't be found, for example when a USB drive is unplugged.
 - Everything saves automatically, with a daily backup of the last 30 days. Colour themes include Classic and Catppuccin Latte / Frappé / Macchiato / Mocha.
 
 The app starts empty: a short setup asks for your details, bank account and students. No student data is included.
@@ -30,7 +31,7 @@ Upgrading from the older "Tuition Invoice Maker": just run the Cikgu Pay install
 
 The installers aren't code-signed. The first time you run one, Windows SmartScreen may show "Windows protected your PC". Click **More info → Run anyway**.
 
-Your data is stored in `Documents\Tuition Invoices\` (this folder name stays the same, so data from older versions carries over):
+Your data is stored in `Documents\Tuition Invoices\` by default (the folder name stays the same, so data from older versions carries over). You can move it anywhere, for example into Google Drive or OneDrive so it's backed up online, with **Settings › Where your invoices are saved › Change folder…**. The folder contains:
 - `invoice-data.json`: your data
 - `backups\`: the daily backups
 - `YYYY-MM\*.pdf`: the PDFs, one folder per month

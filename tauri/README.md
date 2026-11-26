@@ -25,15 +25,15 @@ The page only ever calls `window.invoiceApp.*`. In Electron, `preload.js` provid
 npm install                 # once (Tauri CLI)
 npm start                   # run on Linux (tauri dev)
 npm run selftest            # automated test → .selftest/selftest-result.json
-npm run build:win           # Windows installer → dist/Cikgu-Pay-Setup-1.3.0.exe
+npm run build:win           # Windows installer → dist/Cikgu-Pay-Setup-1.4.0.exe
 
 # Smooth edition (same app + animations from ../app/renderer/motion.css + motion.js)
 npm run start:smooth
 npm run selftest:smooth
-npm run build:win:smooth    # → dist/Cikgu-Pay-Smooth-Setup-1.3.0.exe
+npm run build:win:smooth    # → dist/Cikgu-Pay-Smooth-Setup-1.4.0.exe
 ```
 Both editions are the same app (same identifier and data), so installing one replaces the other on Windows.
-Data goes to `~/Documents/Tuition Invoices/`, the same folder the Electron version uses. Both apps read the same file. The folder keeps its old name on purpose: the app was called "Tuition Invoice Maker" before 1.3, and keeping the folder means existing data is found. `src-tauri/windows/hooks.nsh` makes the installer remove an old "Tuition Invoice Maker" install (the program only, never the data).
+Data goes to `~/Documents/Tuition Invoices/`, the same folder the Electron version uses. Both apps read the same file. The folder keeps its old name on purpose: the app was called "Tuition Invoice Maker" before 1.3, and keeping the folder means existing data is found. Since 1.4 the user can pick another folder (Settings). The choice is stored in `%APPDATA%\io.github.denlopen.tuitioninvoice.tauri\storage.json`, outside the data folder. Moving copies every file, compares each copy byte for byte, switches over, and only then deletes the old copies. If a chosen folder is missing at start-up, the app loads and saves nothing until it's back or another folder is chosen. `src-tauri/windows/hooks.nsh` makes the installer remove an old "Tuition Invoice Maker" install (the program only, never the data).
 
 ## One-time setup for building the Windows installer on Linux
 - Rust ≥ 1.90: `rustup update stable`, then `rustup target add x86_64-pc-windows-msvc`
