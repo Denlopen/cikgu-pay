@@ -220,7 +220,7 @@ async fn export_backup(app: AppHandle, text: String) -> Result<Option<String>, S
         .file()
         .set_title("Save a backup copy")
         .set_directory(docs)
-        .set_file_name(format!("tuition-invoices-backup-{}.json", today()))
+        .set_file_name(format!("cikgu-pay-backup-{}.json", today()))
         .add_filter("Backup file", &["json"])
         .blocking_save_file();
     let Some(picked) = picked else { return Ok(None) };
@@ -353,7 +353,7 @@ fn main() {
             // `tauri dev` serves the page from a local dev server; release builds never have one.
             let dev_url = if cfg!(debug_assertions) { app.config().build.dev_url.clone() } else { None };
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Tuition Invoice Maker")
+                .title("Cikgu Pay")
                 .inner_size(1300.0, 900.0)
                 .min_inner_size(900.0, 600.0)
                 // Show the window straight away (hidden only for the self-test), so a page
@@ -370,5 +370,5 @@ fn main() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running Tuition Invoice Maker");
+        .expect("error while running Cikgu Pay");
 }

@@ -102,7 +102,7 @@ ipcMain.handle('folder:open', () => { ensureDir(rootDir()); return shell.openPat
 ipcMain.handle('backup:export', async (_e, text) => {
   const r = await dialog.showSaveDialog(win, {
     title: 'Save a backup copy',
-    defaultPath: path.join(app.getPath('documents'), `tuition-invoices-backup-${today()}.json`),
+    defaultPath: path.join(app.getPath('documents'), `cikgu-pay-backup-${today()}.json`),
     filters: [{ name: 'Backup file', extensions: ['json'] }],
   });
   if (r.canceled || !r.filePath) return null;
@@ -125,7 +125,7 @@ ipcMain.handle('backup:import', async () => {
 function createWindow() {
   win = new BrowserWindow({
     width: 1300, height: 900, minWidth: 900, minHeight: 600,
-    title: 'Tuition Invoice Maker',
+    title: 'Cikgu Pay',
     icon: path.join(__dirname, 'build', 'icon.png'),
     backgroundColor: '#eef0f3',
     show: false,

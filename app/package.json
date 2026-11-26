@@ -1,6 +1,6 @@
 {
-  "name": "tuition-invoice-maker",
-  "productName": "Tuition Invoice Maker",
+  "name": "cikgu-pay",
+  "productName": "Cikgu Pay",
   "version": "1.3.0",
   "description": "Monthly invoices for private tuition",
   "author": "Denlopen",
@@ -13,7 +13,7 @@
   },
   "build": {
     "appId": "io.github.denlopen.tuitioninvoice",
-    "productName": "Tuition Invoice Maker",
+    "productName": "Cikgu Pay",
     "files": [
       "main.js",
       "preload.js",
@@ -36,11 +36,11 @@
       "perMachine": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "Tuition Invoice Maker",
-      "artifactName": "Tuition-Invoice-Maker-Setup-${version}.${ext}"
+      "shortcutName": "Cikgu Pay",
+      "artifactName": "Cikgu-Pay-Electron-Setup-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "Tuition-Invoice-Maker-Portable-${version}.${ext}"
+      "artifactName": "Cikgu-Pay-Electron-Portable-${version}.${ext}"
     }
   },
   "devDependencies": {

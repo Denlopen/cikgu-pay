@@ -1,6 +1,8 @@
-# Tuition Invoice Maker
+# Cikgu Pay 🧾
 
-A small desktop app for private tutors. It makes monthly invoices and lesson summaries as PDFs, and keeps track of who has paid.
+**Get paid for teaching, without the paperwork.**
+
+Cikgu Pay is a small Windows app for private tutors. It makes monthly invoices and lesson summaries as PDFs, and keeps track of who has paid. (*Cikgu* is Malay for "teacher".)
 
 ## Features
 - **This month** screen: one line per student showing what's due (create the invoice, write the summary, continue a draft) and its status (*Not started*, *Late*, *Draft*, *Sent · not paid*, *Paid*).
@@ -21,24 +23,26 @@ The app starts empty: a short setup asks for your details, bank account and stud
 
 ## Downloads
 Get the Windows installer from the [Releases](../../releases) page:
-- `Tuition-Invoice-Maker-Tauri-Setup-x.y.z.exe`: small (about 1 MB), uses Windows' built-in WebView2. Recommended.
-- `Tuition-Invoice-Maker-Tauri-Smooth-Setup-x.y.z.exe`: the same app with animations.
+- `Cikgu-Pay-Setup-x.y.z.exe`: small (about 1 MB), uses Windows' built-in WebView2. Recommended.
+- `Cikgu-Pay-Smooth-Setup-x.y.z.exe`: the same app with animations.
+
+Upgrading from the older "Tuition Invoice Maker": just run the Cikgu Pay installer. It removes the old app and keeps all your invoices.
 
 The installers aren't code-signed. The first time you run one, Windows SmartScreen may show "Windows protected your PC". Click **More info → Run anyway**.
 
-Your data is stored in `Documents\Tuition Invoices\`:
+Your data is stored in `Documents\Tuition Invoices\` (this folder name stays the same, so data from older versions carries over):
 - `invoice-data.json`: your data
 - `backups\`: the daily backups
 - `YYYY-MM\*.pdf`: the PDFs, one folder per month
 
-There's also a no-install version: open `invoice-maker.html` in Chrome or Edge. It stores data in the browser, so use **Settings › Save a backup** now and then.
+There's also a no-install version: open `cikgu-pay.html` in Chrome or Edge. It stores data in the browser, so use **Settings › Save a backup** now and then.
 
 ## Project layout
 | Folder | What |
 |---|---|
 | `app/` | Electron app. `app/renderer/index.html` is the whole UI, shared by every build. See [app/README.md](app/README.md) |
 | `tauri/` | Tauri 2 (Rust) app using the same UI. See [tauri/README.md](tauri/README.md) |
-| `invoice-maker.html`, `invoice-maker-smooth.html` | Standalone single-file builds (`node app/scripts/build-html.mjs`) |
+| `cikgu-pay.html`, `cikgu-pay-smooth.html` | Standalone single-file builds (`node app/scripts/build-html.mjs`) |
 
 ## Build and test
 ```bash

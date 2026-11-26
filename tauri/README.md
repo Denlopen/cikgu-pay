@@ -1,4 +1,4 @@
-# Tuition Invoice Maker: Tauri version (learning project)
+# Cikgu Pay: Tauri version
 
 The same app as `../app` (Electron), rebuilt with [Tauri 2](https://tauri.app). Both versions use the same invoice screen, data file and PDF names. Only the code underneath differs.
 
@@ -25,15 +25,15 @@ The page only ever calls `window.invoiceApp.*`. In Electron, `preload.js` provid
 npm install                 # once (Tauri CLI)
 npm start                   # run on Linux (tauri dev)
 npm run selftest            # automated test → .selftest/selftest-result.json
-npm run build:win           # Windows installer → dist/Tuition-Invoice-Maker-Tauri-Setup-1.3.0.exe
+npm run build:win           # Windows installer → dist/Cikgu-Pay-Setup-1.3.0.exe
 
 # Smooth edition (same app + animations from ../app/renderer/motion.css + motion.js)
 npm run start:smooth
 npm run selftest:smooth
-npm run build:win:smooth    # → dist/Tuition-Invoice-Maker-Tauri-Smooth-Setup-1.3.0.exe
+npm run build:win:smooth    # → dist/Cikgu-Pay-Smooth-Setup-1.3.0.exe
 ```
 Both editions are the same app (same identifier and data), so installing one replaces the other on Windows.
-Data goes to `~/Documents/Tuition Invoices/`, the same folder the Electron version uses. Both apps read the same file.
+Data goes to `~/Documents/Tuition Invoices/`, the same folder the Electron version uses. Both apps read the same file. The folder keeps its old name on purpose: the app was called "Tuition Invoice Maker" before 1.3, and keeping the folder means existing data is found. `src-tauri/windows/hooks.nsh` makes the installer remove an old "Tuition Invoice Maker" install (the program only, never the data).
 
 ## One-time setup for building the Windows installer on Linux
 - Rust ≥ 1.90: `rustup update stable`, then `rustup target add x86_64-pc-windows-msvc`
@@ -51,7 +51,7 @@ export WINEPREFIX=$TMPDIR/wineprefix-wv2 WINEDEBUG=-all
 wineboot -i; winecfg -v win10
 wine MicrosoftEdgeWebView2RuntimeInstallerX64.exe /silent /install   # https://go.microsoft.com/fwlink/?linkid=2124701
 INVOICE_SELFTEST=1 INVOICE_DATA_DIR='Z:\some\dir' WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--no-sandbox --disable-gpu" \
-  wine src-tauri/target/x86_64-pc-windows-msvc/release/tuition-invoice-maker.exe
+  wine src-tauri/target/x86_64-pc-windows-msvc/release/cikgu-pay.exe
 ```
 
 ## Known differences

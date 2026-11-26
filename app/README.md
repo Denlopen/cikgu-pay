@@ -1,6 +1,6 @@
-# Tuition Invoice Maker
+# Cikgu Pay: Electron version
 
-Desktop app (Electron) for monthly private-tuition invoices. Windows build.
+Desktop app (Electron) for monthly private-tuition invoices. Windows build. The released app is the Tauri build in `../tauri`; this version uses the same UI.
 
 ## How it's organised (v1.3)
 Three screens in the top bar, plus the document editor:
@@ -21,9 +21,9 @@ Saving: every change is saved automatically ("✓ All changes saved" top-right).
 Each student also has their own bank account, title line, footer brand (or none) and PDF name pattern (e.g. `<name>_112026 - Invoice 02`).
 
 ## For the user
-- Install: run `Tuition-Invoice-Maker-Setup-1.3.0.exe`. It installs for the current user only, no admin needed, and adds Desktop and Start Menu shortcuts.
+- Install: run `Cikgu-Pay-Electron-Setup-1.3.0.exe`. It installs for the current user only, no admin needed, and adds Desktop and Start Menu shortcuts.
   - Windows may say "Windows protected your PC" because the app is unsigned. Click **More info → Run anyway**. This only happens the first time.
-- No install: `Tuition-Invoice-Maker-Portable-1.3.0.exe` runs directly (starts a few seconds slower).
+- No install: `Cikgu-Pay-Electron-Portable-1.3.0.exe` runs directly (starts a few seconds slower).
 - Everything lives in **Documents\Tuition Invoices\\**:
   - `invoice-data.json`: all students, invoices and settings (saved on every change)
   - `backups\`: a copy every day, the last 30 kept
@@ -37,7 +37,7 @@ Pick one in Settings → Appearance: Classic (original), Catppuccin Latte / Frap
 
 ## Smooth edition (animations)
 `renderer/motion.css` + `renderer/motion.js` form an add-on layer. It wraps the app's render functions and animates the changes (FLIP list moves, page-turn on document switch, count-up totals). `scripts/editions.mjs` adds it to the page:
-- `node scripts/build-html.mjs` writes `../invoice-maker.html` (plain) and `../invoice-maker-smooth.html`
+- `node scripts/build-html.mjs` writes `../cikgu-pay.html` (plain) and `../cikgu-pay-smooth.html`
 - the Tauri app: `npm run start:smooth` / `build:win:smooth` in `../tauri`
 
 Animations switch off when the OS "reduce motion" setting is on. Print CSS + `settle()` make sure a PDF never captures a half-finished animation.

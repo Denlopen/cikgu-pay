@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:">
-<title>Tuition Invoice Maker</title>
+<title>Cikgu Pay</title>
 <script>
 // Colour theme. Applied here, before the page draws, so there's no flash of the wrong colours.
 // The choice is saved with the app data (S.prefs) and cached in localStorage for the next start.
@@ -319,7 +319,7 @@ body.desktop .browser-only { display:none !important; }
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">🧾 Tuition Invoices</div>
+  <div class="brand">🧾 Cikgu Pay</div>
   <nav class="tabs" aria-label="Screens">
     <button class="tab" data-view="home">This month</button>
     <button class="tab" data-view="docs">Invoices</button>
@@ -1713,7 +1713,7 @@ $('#exportBtn').onclick = async () => {
   const blob = new Blob([text], { type:'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `tuition-invoices-backup-${todayISO()}.json`;
+  a.download = `cikgu-pay-backup-${todayISO()}.json`;
   a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 $('#importBtn').onclick = async () => {
@@ -1843,7 +1843,7 @@ new MutationObserver(() => attachEmoji($('#studentList'))).observe($('#studentLi
    Finished tours are remembered in S.prefs.toursDone, so they only show once (Settings › Help replays them). */
 const TOURS = {
   home: [
-    { title: 'Welcome! 👋', text: 'This app makes your tuition invoices and lesson summaries, and keeps track of who has paid. Here’s a one-minute tour.', next: 'Start the tour', intro: true },
+    { title: 'Welcome to Cikgu Pay! 👋', text: 'Cikgu Pay makes your tuition invoices and lesson summaries, and keeps track of who has paid. Here’s a one-minute tour.', next: 'Start the tour', intro: true },
     { el: () => $('.tabs [data-view="home"]'), title: 'This month', text: 'Your to-do list. Each month it shows which invoice or summary every student needs, and whether it’s done.' },
     { el: () => $('#taskList').closest('.card'), title: 'To do', text: () => S.students.length
         ? 'One line per job. Click “Create invoice”, “Write summary” or “Continue”. The coloured label shows the status: Not started, Draft, Sent or Paid.'

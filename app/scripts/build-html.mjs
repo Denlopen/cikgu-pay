@@ -1,11 +1,11 @@
 // Writes the standalone single-file versions (no install needed, open in a browser):
-//   ../invoice-maker.html         plain
-//   ../invoice-maker-smooth.html  with animations
+//   ../cikgu-pay.html         plain
+//   ../cikgu-pay-smooth.html  with animations
 import { writeFileSync } from 'node:fs';
 import { readUI, smooth } from './editions.mjs';
 
 const out = new URL('../../', import.meta.url);
 const html = readUI();
-writeFileSync(new URL('invoice-maker.html', out), html);
-writeFileSync(new URL('invoice-maker-smooth.html', out), smooth(html));
-console.log('build-html: invoice-maker.html + invoice-maker-smooth.html updated');
+writeFileSync(new URL('cikgu-pay.html', out), html);
+writeFileSync(new URL('cikgu-pay-smooth.html', out), smooth(html));
+console.log('build-html: cikgu-pay.html + cikgu-pay-smooth.html updated');
