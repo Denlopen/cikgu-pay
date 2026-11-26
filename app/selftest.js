@@ -1,0 +1,98 @@
+'use strict';
+// Automated check, only runs when INVOICE_SELFTEST=1 is set (never for normal users).
+// Drives the real UI for all three billing styles, exports PDFs, reloads the page,
+// and writes selftest-result.json next to the data.
+const fs = require('node:fs');
+const path = require('node:path');
+const { app } = require('electron');
+
+module.exports = function selftest(win) {
+  const dir = process.env.INVOICE_DATA_DIR || app.getPath('temp');
+  const out = path.join(dir, 'selftest-result.json');
+  const res = {};
+  const wc = win.webContents;
+  const finish = (ok, extra = {}) => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(out, JSON.stringify({ ok, ...res, ...extra }, null, 2));
+    app.exit(ok ? 0 : 1);
+  };
+  setTimeout(() => finish(false, { error: 'timeout' }), 120000);
+  const loaded = () => new Promise(r => wc.once('did-finish-load', r));
+  const ready = async () => {
+    for (let i = 0; i < 100; i++) {
+      if (await wc.executeJavaScript('window.__ready === true').catch(() => false)) return;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    throw new Error('page never became ready');
+  };
+
+  (async () => {
+    await loaded(); await ready();
+    res.atStart = await wc.executeJavaScript(`({ schema: S.schema, tutor: S.tutor.name, banks: S.tutor.banks.map(b => b.bank + ' ' + b.accNo),
+      students: S.students.map(s => s.name + '/' + s.plan), invoices: S.invoices.length, view })`);
+    res.run = await wc.executeJavaScript(`(async () => {
+      const errors = []; window.addEventListener('error', e => errors.push(e.message));
+      try {
+      if (!S.tutor.name) { S.tutor.name = 'Test Tutor'; S.tutor.banks.forEach(b => { b.accNo = '1111 2222'; b.accName = 'Test Tutor'; }); persist(); }
+      const out = {};
+      setTheme('mocha', 'blue');   // everything below runs in a dark theme; PDFs must not change
+      out.theme = document.documentElement.dataset.theme + '/' + document.documentElement.dataset.accent;
+      // Test fixtures: three made-up students, one per billing style (the app itself starts with none)
+      const fx = [
+        { name: 'Student A', code: 'TSA', rate: 100, plan: 'end', filePrefix: 'Student A', fileLabel: 'Invoice', firstSeq: 1 },
+        { name: 'Student B', code: 'TSB', rate: 120, plan: 'start', filePrefix: 'Student B', fileLabel: 'Invoice', firstSeq: 1, schedule: [{ weekday: 4, time: '4-5pm' }], greeting: true, notes: 'Test note.' },
+        { name: 'Student C', code: 'TSC', rate: 100, plan: 'startSummary', filePrefix: 'Student C', fileLabel: 'Invoice', summaryLabel: 'Lesson Summary', firstSummarySeq: 1 },
+      ];
+      for (const f of fx) if (!S.students.some(s => s.name === f.name)) S.students.push({ ...studentDefaults(), level: 'Test', bankId: S.tutor.banks[0].id, ...f });
+      persist();
+      const ids = Object.fromEntries(S.students.map(s => [s.name, s.id]));
+      // The pre-save checks would open a dialog; record what they say and carry on.
+      out.checks = []; window.preflight = async d => { out.checks.push(checkDoc(d)); return true; };
+      const lessons = (days, ym) => days.map((d, i) => ({ ...lessonDefaults(), date: ym + '-' + d, subject: 'Math', topic: 'Topic ' + (i + 1) }));
+
+      // 1) End of month + summary (Student A), started from the "This month" screen's code path
+      const d1 = createDoc(ids['Student A'], 'end', '2026-08');
+      d1.seq = 7; d1.lessons = lessons(['04', '06', '11', '13', '18', '20', '25'], '2026-08'); renderDoc();
+      out.end = { pdf: (await savePdfFlow()).path, total: totals(S.draft).grand, file: fileBaseName(), status: docStatus(d1).label };
+
+      // 2) Start of month, booked slots (Student B): month changed like a user would, one slot rescheduled
+      const d2 = createDoc(ids['Student B'], 'start', '2026-10');
+      const mi = document.querySelector('#view-editor [data-bind="draft.month"]');
+      mi.value = '2026-11'; mi.dispatchEvent(new Event('input', { bubbles: true }));
+      d2.seq = 2;
+      d2.slots[1].movedDate = '2026-11-11'; d2.slots[1].movedTime = '8 -9pm'; renderDoc();
+      out.start = { pdf: (await savePdfFlow()).path, total: totals(S.draft).grand, slots: d2.slots.map(s => s.date), file: fileBaseName(), greeting: d2.greeting };
+
+      // 3) Start-of-month invoice -> paid -> summary at month end (Student C)
+      const sid3 = ids['Student C'];
+      const d3 = createDoc(sid3, 'start', '2026-10');
+      d3.slots = ['05', '07', '13', '20'].map(d => ({ ...slotDefaults(), date: '2026-10-' + d, time: '8-9pm' }));
+      renderDoc(); await savePdfFlow();
+      markPaid(d3.id, '2026-10-06');
+      showView('docs');
+      document.querySelector('#histList tr[data-id="' + d3.id + '"] [data-act=summary]').click();
+      S.draft.lessons.forEach((l, i) => { l.subject = 'Math'; l.topic = 'Topic ' + (i + 1); });
+      S.draft.lessons[0].more.push({ subject: 'Chemistry', topic: 'Haber process' }); S.draft.seq = 10; renderDoc();
+      out.summary = { pdf: (await savePdfFlow()).path, kind: S.draft.kind, invNo: invNo(S.draft), file: fileBaseName(),
+                      pay: [S.draft.payStatus, S.draft.payDate, S.draft.payRef], lessons: S.draft.lessons.length };
+      showView('home');
+      out.owed = [...document.querySelectorAll('#owedList .owe')].map(o => o.innerText.replace(/\\n/g, ' | '));
+      out.wa = waMessage(d1);
+      out.history = S.invoices.map(i => i.kind + ' ' + invNo(i) + (i.paid ? ' paid' : ''));
+      out.errors = errors;
+      return out;
+      } catch (e) { return { fatal: String(e && e.stack || e), errors }; }
+    })()`);
+    if (res.run.fatal) throw new Error('in page: ' + res.run.fatal);
+    await new Promise(r => setTimeout(r, 300));
+    wc.reload(); await loaded(); await ready();
+    res.afterReload = await wc.executeJavaScript('({ tutor: S.tutor.name, invoices: S.invoices.length, docs: S.invoices.map(d => d.kind + " " + invNo(d) + " " + docStatus(d).label), view, theme: document.documentElement.dataset.theme + "/" + document.documentElement.dataset.accent, savedPrefs: S.prefs })');
+    const pdfs = ['end', 'start', 'summary'].map(k => res.run[k] && res.run[k].pdf).filter(Boolean);
+    res.files = {
+      dataFileBytes: fs.statSync(path.join(dir, 'invoice-data.json')).size,
+      pdfs: pdfs.map(p => [path.basename(p), fs.existsSync(p) ? fs.statSync(p).size : 0]),
+      backups: fs.existsSync(path.join(dir, 'backups')) ? fs.readdirSync(path.join(dir, 'backups')) : [],
+    };
+    finish(true);
+  })().catch(err => finish(false, { error: String((err && err.stack) || err) }));
+};

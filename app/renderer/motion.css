@@ -1,0 +1,78 @@
+/* ===== Smooth edition: motion styles =====
+   Added on top of index.html by app/scripts/editions.mjs. Only animates transform/opacity
+   (cheap for the GPU), plus a few height changes. Everything is off when the computer is set
+   to "reduce animations" (prefers-reduced-motion). */
+
+/* Always-on helpers (no motion in them) */
+html.smooth .previewWrap { position: relative; }
+html.smooth #sumRight { display: inline-block; }
+html.smooth details.more-opts > summary::before,
+html.smooth details.more-opts[open] > summary::before { content: "▸ "; display: inline-block; white-space: pre; }
+html.smooth details.more-opts[open] > summary::before { transform: rotate(90deg); }
+
+@media (prefers-reduced-motion: no-preference) {
+  html.smooth { interpolate-size: allow-keywords; scroll-behavior: smooth; } /* lets height animate to/from "auto" */
+
+  /* Sections open and close smoothly instead of jumping */
+  @supports selector(::details-content) {
+    html.smooth details::details-content {
+      block-size: 0;
+      overflow: clip;
+      transition: block-size .34s cubic-bezier(.2,.8,.2,1), content-visibility .34s allow-discrete;
+    }
+    html.smooth details[open]::details-content { block-size: auto; }
+  }
+  html.smooth details.more-opts > summary::before { transition: transform .3s cubic-bezier(.2,.8,.2,1); }
+  html.smooth .tab { transition: background-color .2s ease, color .2s ease; }
+  html.smooth .task, html.smooth .owe { transition: background-color .2s ease; }
+  html.smooth .task:hover, html.smooth .owe:hover { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+  html.smooth .modal:not([hidden]) { animation: motion-fade .2s ease; }
+  html.smooth .modal:not([hidden]) .dialog { animation: motion-pop .28s cubic-bezier(.34,1.56,.64,1); }
+
+  /* Buttons: soft hover, press-in on click */
+  html.smooth button { transition: background-color .18s ease, border-color .18s ease, box-shadow .2s ease, transform .14s ease; }
+  html.smooth button:active:not(:disabled) { transform: scale(.96); }
+  html.smooth button.primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  /* Fields: a soft glow instead of a hard outline */
+  html.smooth input, html.smooth select, html.smooth textarea { transition: border-color .18s ease, box-shadow .22s ease; }
+  html.smooth input:focus, html.smooth select:focus, html.smooth textarea:focus { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
+
+  html.smooth .card { transition: box-shadow .25s ease; }
+  html.smooth .card:hover { box-shadow: var(--shadow), 0 3px 12px rgba(0,0,0,.09); }
+  html.smooth .box, html.smooth details.student { transition: border-color .2s ease, background-color .2s ease; }
+  html.smooth .box:hover, html.smooth details.student:hover { border-color: var(--border); }
+  html.smooth .pill { transition: background-color .3s ease, color .3s ease; }
+  html.smooth .hist tbody tr { transition: background-color .2s ease; }
+  html.smooth .hist tbody tr:hover { background: var(--surface-2); }
+
+  /* Toast slides up with a little bounce */
+  html.smooth .toast { transform: translate(-50%, 14px) scale(.96); transition: opacity .25s ease, transform .38s cubic-bezier(.34,1.56,.64,1); }
+  html.smooth .toast.show { transform: translate(-50%, 0) scale(1); }
+
+  /* Save PDF: spinner while the PDF is being made */
+  html.smooth button.primary:disabled { position: relative; color: transparent !important; opacity: 1; cursor: progress; }
+  html.smooth button.primary:disabled::after {
+    content: ""; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px; border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--accent-text) 35%, transparent); border-top-color: var(--accent-text); animation: motion-spin .7s linear infinite;
+  }
+
+  /* Hidden for a moment at start-up, until the intro animation runs (motion.js removes this) */
+  html.smooth-intro .topbar, html.smooth-intro .page > *, html.smooth-intro .editor > *, html.smooth-intro .previewWrap { opacity: 0; }
+  html.motion-turning .previewWrap { overflow-x: clip; }
+
+  /* Theme switch: the new colours spread out in a circle from where you clicked (motion.js) */
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+  html.smooth .swatch { transition: transform .15s ease, box-shadow .2s ease; }
+  html.smooth .swatch:hover { transform: scale(1.18); }
+}
+@keyframes motion-spin { to { transform: rotate(360deg); } }
+@keyframes motion-fade { from { opacity: 0; } }
+@keyframes motion-pop { from { opacity: 0; transform: translateY(8px) scale(.96); } }
+
+/* Printing / Save PDF must never catch an animation half-way */
+@media print {
+  .motion-ghost { display: none !important; }
+  .paper { opacity: 1 !important; transform: none !important; }
+  html.smooth-intro .previewWrap { opacity: 1 !important; }
+}

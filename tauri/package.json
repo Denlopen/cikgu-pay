@@ -1,0 +1,20 @@
+{
+  "name": "tuition-invoice-maker-tauri",
+  "private": true,
+  "version": "1.3.0",
+  "type": "module",
+  "scripts": {
+    "sync-ui": "node scripts/sync-ui.mjs",
+    "tauri": "tauri",
+    "start": "tauri dev",
+    "selftest": "INVOICE_SELFTEST=1 INVOICE_DATA_DIR=$PWD/.selftest tauri dev",
+    "build:linux": "tauri build --no-bundle",
+    "build:win": "RUSTFLAGS=\"--remap-path-prefix=$HOME=/build\" PATH=$HOME/.cargo/bin:$HOME/.local/share/nsis-wrapper:$PATH tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc && mkdir -p dist && cp \"src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Tuition Invoice Maker_1.3.0_x64-setup.exe\" dist/Tuition-Invoice-Maker-Tauri-Setup-1.3.0.exe",
+    "start:smooth": "tauri dev --config src-tauri/tauri.smooth.conf.json",
+    "selftest:smooth": "INVOICE_SELFTEST=1 INVOICE_DATA_DIR=$PWD/.selftest tauri dev --config src-tauri/tauri.smooth.conf.json",
+    "build:win:smooth": "RUSTFLAGS=\"--remap-path-prefix=$HOME=/build\" PATH=$HOME/.cargo/bin:$HOME/.local/share/nsis-wrapper:$PATH tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --config src-tauri/tauri.smooth.conf.json && mkdir -p dist && cp \"src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Tuition Invoice Maker_1.3.0_x64-setup.exe\" dist/Tuition-Invoice-Maker-Tauri-Smooth-Setup-1.3.0.exe"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.6"
+  }
+}

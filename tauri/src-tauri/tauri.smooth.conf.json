@@ -1,0 +1,6 @@
+{
+  "build": {
+    "beforeDevCommand": "node scripts/sync-ui.mjs --smooth",
+    "beforeBuildCommand": "node scripts/sync-ui.mjs --smooth"
+  }
+}

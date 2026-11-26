@@ -1,0 +1,23 @@
+# dependencies and build output
+node_modules/
+dist/
+target/
+tauri/ui/
+tauri/src-tauri/gen/
+
+# test runs (contain generated invoices / data files)
+.selftest/
+selftest-result.json
+
+# real data must never be committed
+invoice-data.json
+backups/
+*.pdf
+*-backup*.json
+private/
+
+# editor / OS clutter
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

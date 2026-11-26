@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:">
+<title>Tuition Invoice Maker</title>
+<script>
+// Colour theme. Applied here, before the page draws, so there's no flash of the wrong colours.
+// The choice is saved with the app data (S.prefs) and cached in localStorage for the next start.
+window.applyTheme = function (prefs) {
+  const p = prefs || {}, root = document.documentElement;
+  const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = p.theme === 'auto' ? (dark ? 'mocha' : 'latte') : (p.theme || 'classic');
+  root.dataset.theme = theme;
+  if (theme === 'classic') delete root.dataset.accent; else root.dataset.accent = p.accent || 'mauve';
+  try { localStorage.setItem('tuitionInvoiceMaker.theme', JSON.stringify({ theme: p.theme || 'classic', accent: p.accent || 'mauve' })); } catch (e) {}
+};
+try { window.applyTheme(JSON.parse(localStorage.getItem('tuitionInvoiceMaker.theme'))); } catch (e) { window.applyTheme(null); }
+</script>
+<style>
+/* ---------- Themes ----------
+   Every colour of the app comes from these variables (the invoice paper keeps its own
+   black-on-white colours, so PDFs never change). Classic = the original look.
+   Catppuccin palettes: https://catppuccin.com/palette */
+:root {
+  color-scheme: light;
+  --bg:#eef0f3; --surface:#fff; --surface-2:#fafbfc; --surface-3:#f7f8fa; --surface-hover:#eef1f5;
+  --text:#1d2330; --muted:#4f5867; --faint:#5f6878; --chevron:#8a93a3;
+  --border:#cfd5de; --border-soft:#e3e7ed; --line:#eef0f3; --input-bg:#fff;
+  --accent:#2f5d8a; --accent-hover:#264d73; --accent-text:#fff; --accent-soft:#e6eef8; --focus:#9cc0e6;
+  --danger:#b42318; --danger-soft:#fde8e8; --ok:#1e7a3c; --ok-soft:#e3f6e8; --warn-soft:#f4f1e4;
+  --summary:#f1f5fa; --path:#3d4656; --toast-bg:#1d2330; --toast-text:#fff;
+  --shadow:0 1px 3px rgba(0,0,0,.08); --paper-shadow:0 2px 14px rgba(0,0,0,.15);
+}
+html[data-theme="latte"] { color-scheme:light;
+  --ctp-rosewater:#dc8a78; --ctp-flamingo:#dd7878; --ctp-pink:#ea76cb; --ctp-mauve:#8839ef; --ctp-red:#d20f39; --ctp-maroon:#e64553; --ctp-peach:#fe640b; --ctp-yellow:#df8e1d; --ctp-green:#40a02b; --ctp-teal:#179299; --ctp-sky:#04a5e5; --ctp-sapphire:#209fb5; --ctp-blue:#1e66f5; --ctp-lavender:#7287fd; --ctp-text:#4c4f69; --ctp-subtext1:#5c5f77; --ctp-subtext0:#6c6f85; --ctp-overlay2:#7c7f93; --ctp-overlay1:#8c8fa1; --ctp-overlay0:#9ca0b0; --ctp-surface2:#acb0be; --ctp-surface1:#bcc0cc; --ctp-surface0:#ccd0da; --ctp-base:#eff1f5; --ctp-mantle:#e6e9ef; --ctp-crust:#dce0e8; }
+html[data-theme="frappe"] { color-scheme:dark;
+  --ctp-rosewater:#f2d5cf; --ctp-flamingo:#eebebe; --ctp-pink:#f4b8e4; --ctp-mauve:#ca9ee6; --ctp-red:#e78284; --ctp-maroon:#ea999c; --ctp-peach:#ef9f76; --ctp-yellow:#e5c890; --ctp-green:#a6d189; --ctp-teal:#81c8be; --ctp-sky:#99d1db; --ctp-sapphire:#85c1dc; --ctp-blue:#8caaee; --ctp-lavender:#babbf1; --ctp-text:#c6d0f5; --ctp-subtext1:#b5bfe2; --ctp-subtext0:#a5adce; --ctp-overlay2:#949cbb; --ctp-overlay1:#838ba7; --ctp-overlay0:#737994; --ctp-surface2:#626880; --ctp-surface1:#51576d; --ctp-surface0:#414559; --ctp-base:#303446; --ctp-mantle:#292c3c; --ctp-crust:#232634; }
+html[data-theme="macchiato"] { color-scheme:dark;
+  --ctp-rosewater:#f4dbd6; --ctp-flamingo:#f0c6c6; --ctp-pink:#f5bde6; --ctp-mauve:#c6a0f6; --ctp-red:#ed8796; --ctp-maroon:#ee99a0; --ctp-peach:#f5a97f; --ctp-yellow:#eed49f; --ctp-green:#a6da95; --ctp-teal:#8bd5ca; --ctp-sky:#91d7e3; --ctp-sapphire:#7dc4e4; --ctp-blue:#8aadf4; --ctp-lavender:#b7bdf8; --ctp-text:#cad3f5; --ctp-subtext1:#b8c0e0; --ctp-subtext0:#a5adcb; --ctp-overlay2:#939ab7; --ctp-overlay1:#8087a2; --ctp-overlay0:#6e738d; --ctp-surface2:#5b6078; --ctp-surface1:#494d64; --ctp-surface0:#363a4f; --ctp-base:#24273a; --ctp-mantle:#1e2030; --ctp-crust:#181926; }
+html[data-theme="mocha"] { color-scheme:dark;
+  --ctp-rosewater:#f5e0dc; --ctp-flamingo:#f2cdcd; --ctp-pink:#f5c2e7; --ctp-mauve:#cba6f7; --ctp-red:#f38ba8; --ctp-maroon:#eba0ac; --ctp-peach:#fab387; --ctp-yellow:#f9e2af; --ctp-green:#a6e3a1; --ctp-teal:#94e2d5; --ctp-sky:#89dceb; --ctp-sapphire:#74c7ec; --ctp-blue:#89b4fa; --ctp-lavender:#b4befe; --ctp-text:#cdd6f4; --ctp-subtext1:#bac2de; --ctp-subtext0:#a6adc8; --ctp-overlay2:#9399b2; --ctp-overlay1:#7f849c; --ctp-overlay0:#6c7086; --ctp-surface2:#585b70; --ctp-surface1:#45475a; --ctp-surface0:#313244; --ctp-base:#1e1e2e; --ctp-mantle:#181825; --ctp-crust:#11111b; }
+html[data-theme="latte"], html[data-theme="frappe"], html[data-theme="macchiato"], html[data-theme="mocha"] {
+  --accent:var(--ctp-mauve);
+  --bg:var(--ctp-crust); --surface:var(--ctp-base); --surface-2:var(--ctp-mantle); --surface-3:var(--ctp-surface0); --surface-hover:var(--ctp-surface1);
+  --text:var(--ctp-text); --muted:var(--ctp-subtext0); --faint:var(--ctp-overlay1); --chevron:var(--ctp-overlay2);
+  --border:var(--ctp-surface1); --border-soft:var(--ctp-surface0); --line:var(--ctp-surface0); --input-bg:var(--ctp-mantle);
+  --accent-hover:color-mix(in srgb, var(--accent) 82%, var(--ctp-text));
+  --accent-text:var(--ctp-base);
+  --accent-soft:color-mix(in srgb, var(--accent) 20%, var(--ctp-base));
+  --focus:color-mix(in srgb, var(--accent) 55%, transparent);
+  --danger:var(--ctp-red); --danger-soft:color-mix(in srgb, var(--ctp-red) 18%, var(--ctp-base));
+  --ok:var(--ctp-green); --ok-soft:color-mix(in srgb, var(--ctp-green) 18%, var(--ctp-base));
+  --warn-soft:color-mix(in srgb, var(--ctp-yellow) 18%, var(--ctp-mantle));
+  --summary:var(--ctp-surface0); --path:var(--ctp-subtext1);
+  --toast-bg:var(--ctp-text); --toast-text:var(--ctp-base);
+  --shadow:0 1px 3px rgba(0,0,0,.25); --paper-shadow:0 6px 28px rgba(0,0,0,.45);
+}
+html[data-theme="latte"] { --shadow:0 1px 3px rgba(76,79,105,.14); --paper-shadow:0 2px 16px rgba(76,79,105,.22); --input-bg:var(--ctp-base); }
+html[data-accent="rosewater"] { --accent:var(--ctp-rosewater); }
+html[data-accent="flamingo"] { --accent:var(--ctp-flamingo); }
+html[data-accent="pink"] { --accent:var(--ctp-pink); }
+html[data-accent="mauve"] { --accent:var(--ctp-mauve); }
+html[data-accent="red"] { --accent:var(--ctp-red); }
+html[data-accent="maroon"] { --accent:var(--ctp-maroon); }
+html[data-accent="peach"] { --accent:var(--ctp-peach); }
+html[data-accent="yellow"] { --accent:var(--ctp-yellow); }
+html[data-accent="green"] { --accent:var(--ctp-green); }
+html[data-accent="teal"] { --accent:var(--ctp-teal); }
+html[data-accent="sky"] { --accent:var(--ctp-sky); }
+html[data-accent="sapphire"] { --accent:var(--ctp-sapphire); }
+html[data-accent="blue"] { --accent:var(--ctp-blue); }
+html[data-accent="lavender"] { --accent:var(--ctp-lavender); }
+/* Light accents on Latte need dark text to stay readable */
+html[data-theme="latte"][data-accent="rosewater"], html[data-theme="latte"][data-accent="flamingo"], html[data-theme="latte"][data-accent="peach"], html[data-theme="latte"][data-accent="yellow"], html[data-theme="latte"][data-accent="green"], html[data-theme="latte"][data-accent="teal"], html[data-theme="latte"][data-accent="sky"], html[data-theme="latte"][data-accent="sapphire"] { --accent-text:#232634; }
+
+/* ---------- Layout & components (v1.3: screens instead of one long form) ---------- */
+* { box-sizing: border-box; }
+[hidden] { display:none !important; }
+body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size:15px; background:var(--bg); color:var(--text); }
+h1, h2 { margin:0; }
+h2 { font-size:21px; }
+h3 { font-size:15px; margin:18px 0 4px; color:var(--text); }
+.sub { font-size:14px; color:var(--muted); margin:2px 0 0; }
+
+/* Top bar: app name, the three screens, "Saved ✓" */
+.topbar { position:sticky; top:0; z-index:6; display:flex; align-items:center; gap:18px; padding:10px 22px;
+  background:var(--surface); border-bottom:1px solid var(--border-soft); box-shadow:var(--shadow); }
+.brand { font-weight:700; font-size:16px; white-space:nowrap; }
+.tabs { display:flex; gap:4px; flex-wrap:wrap; }
+.tab { border:none; background:transparent; color:var(--muted); border-radius:999px; padding:8px 16px; min-height:38px; font-weight:600; }
+.tab:hover { background:var(--surface-hover); color:var(--text); }
+.tab.on { background:var(--accent-soft); color:var(--accent); }
+.saved { margin-left:auto; font-size:13px; color:var(--muted); white-space:nowrap; }
+.saved.err { color:var(--danger); font-weight:600; }
+
+.view { padding:22px; }
+.page { max-width:900px; margin:0 auto; }
+.page.narrow { max-width:780px; }
+.page > * + * { margin-top:16px; }
+.pagehead { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; }
+
+.card { background:var(--surface); border-radius:12px; box-shadow:var(--shadow); }
+.card > .body, .card .body { padding:16px 18px 18px; }
+.card > .body > h3:first-child, .card .cardtitle { margin-top:0; }
+.cardtitle { font-size:16px; font-weight:700; margin:0 0 6px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+
+label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+label.check { display:flex; gap:8px; align-items:center; color:var(--text); font-size:14px; margin-top:12px; }
+label.check input { width:auto; accent-color:var(--accent); }
+input, select, textarea { width:100%; padding:8px 10px; min-height:38px; border:1px solid var(--border); border-radius:8px; font:inherit; font-size:15px; background:var(--input-bg); color:inherit; }
+textarea { resize:vertical; min-height:0; }
+input:focus, select:focus, textarea:focus { outline:2px solid var(--focus); border-color:var(--accent); }
+.row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.row3 { display:grid; grid-template-columns:2fr 1fr 1fr; gap:12px; }
+.inline { display:flex; gap:8px; align-items:center; }
+.inline input { flex:1; }
+
+button { font:inherit; font-size:15px; padding:8px 14px; min-height:38px; border-radius:8px; border:1px solid var(--border); background:var(--surface-3); cursor:pointer; color:inherit; white-space:nowrap; }
+button:hover { background:var(--surface-hover); }
+button:disabled { opacity:.6; cursor:wait; }
+button.primary { background:var(--accent); color:var(--accent-text); border-color:var(--accent); font-weight:600; }
+button.primary:hover { background:var(--accent-hover); }
+button.big { font-size:16px; padding:11px 20px; }
+button.danger { color:var(--danger); }
+button.danger-fill { background:var(--danger); border-color:var(--danger); color:#fff; font-weight:600; }
+button.small { font-size:13px; padding:4px 10px; min-height:30px; }
+button.link { border:none; background:none; color:var(--accent); padding:4px 0; min-height:0; text-decoration:underline; }
+.btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+.hint { font-size:13px; color:var(--faint); margin-top:5px; line-height:1.4; }
+.chip { border-radius:999px; font-size:13px; padding:4px 12px; min-height:32px; }
+
+.pill { display:inline-block; font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; white-space:nowrap; background:var(--surface-3); color:var(--muted); }
+.pill.todo  { background:var(--warn-soft); color:var(--text); }
+.pill.late, .pill.unpaid { background:var(--danger-soft); color:var(--danger); }
+.pill.ok    { background:var(--ok-soft); color:var(--ok); }
+.pill.info  { background:var(--accent-soft); color:var(--accent); }
+
+/* ---------- This month (home) ---------- */
+.stats { display:flex; gap:12px; flex-wrap:wrap; }
+.stat { background:var(--surface); border-radius:12px; box-shadow:var(--shadow); padding:12px 18px; min-width:150px; }
+.stat b { display:block; font-size:22px; }
+.stat span { font-size:13px; color:var(--muted); }
+.task, .owe { display:grid; grid-template-columns:1fr auto; gap:6px 14px; align-items:center; padding:13px 0; border-top:1px solid var(--line); }
+.task:first-child, .owe:first-child { border-top:none; }
+.task .who, .owe .who { font-weight:700; }
+.task .who small, .owe .who small { font-weight:400; color:var(--muted); }
+.task .what, .owe .what { font-size:14px; color:var(--muted); grid-column:1; }
+.task .side, .owe .side { grid-row:1 / span 2; grid-column:2; display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+.empty-note { color:var(--faint); padding:8px 0; }
+
+/* First-run wizard */
+.welcome { border:2px solid var(--accent); }
+.wiz-steps { display:flex; gap:8px; margin:6px 0 2px; }
+.wiz-steps span { flex:1; height:5px; border-radius:3px; background:var(--surface-3); }
+.wiz-steps span.on { background:var(--accent); }
+.wizrow { display:grid; grid-template-columns:1.1fr 1.2fr 1.2fr; gap:10px; align-items:end; }
+.wizstu { display:grid; grid-template-columns:1.4fr 2fr .8fr; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
+.wizstu:first-child { border-top:none; }
+.wizadd input, .wizadd select { height:40px; }
+.wizadd { grid-template-columns:1.4fr 2fr .8fr; align-items:end; border-top:1px dashed var(--border); margin-top:6px; }
+
+/* ---------- Invoices list ---------- */
+.filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.filters select { width:auto; }
+.hist { width:100%; border-collapse:collapse; font-size:14px; }
+.hist th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:8px 6px; border-bottom:1px solid var(--border-soft); }
+.hist td { padding:10px 6px; border-bottom:1px solid var(--line); vertical-align:middle; }
+.hist td.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.hist td.acts div { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+.hist .doc small { display:block; color:var(--muted); font-size:12px; }
+
+/* ---------- Editor ---------- */
+.app { display:grid; grid-template-columns: minmax(380px, 520px) 1fr; gap:22px; align-items:start; }
+@media (max-width: 1100px) { .app { grid-template-columns: 1fr; } }
+.editor { display:flex; flex-direction:column; gap:14px; }
+.edhead { display:flex; align-items:center; gap:12px; }
+.edhead h2 { font-size:19px; }
+.edhead .sub { margin:0; }
+.edhead .pill { margin-left:auto; }
+.box { border:1px solid var(--border-soft); border-radius:10px; padding:10px 12px; margin-top:10px; background:var(--surface-2); }
+.box .top { display:grid; grid-template-columns:1.4fr 1.1fr .6fr; gap:8px; }
+.box .top label, .box .topic label { margin-top:0; }
+.box .topic { margin-top:8px; }
+.box .more { display:grid; grid-template-columns:1fr 2fr auto; gap:8px; margin-top:8px; }
+.box .meta { display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:13px; color:var(--faint); gap:6px; }
+.box .meta .acts { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.box .moved { margin-top:8px; padding:8px 10px; background:var(--warn-soft); border-radius:8px; }
+.box .moved label { margin-top:0; }
+.quick { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:12px; font-size:13px; color:var(--muted); }
+.summary { margin-top:14px; padding:12px 14px; background:var(--summary); border-radius:10px; font-size:15px; display:flex; justify-content:space-between; align-items:center; }
+.summary b { font-size:18px; }
+details.more-opts { border-top:1px solid var(--line); margin-top:16px; padding-top:4px; }
+details.more-opts > summary { cursor:pointer; padding:10px 0; font-weight:600; color:var(--muted); list-style:none; }
+details.more-opts > summary::-webkit-details-marker { display:none; }
+details.more-opts > summary::before { content:"▸ "; }
+details.more-opts[open] > summary::before { content:"▾ "; }
+.result { margin-top:14px; padding:12px 14px; background:var(--ok-soft); border-radius:10px; font-size:14px; }
+.result .path { color:var(--path); word-break:break-all; margin:4px 0 2px; font-size:13px; }
+.previewWrap { overflow:auto; }
+.previewBar { display:flex; gap:8px; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+.previewBar .kind { font-size:13px; color:var(--muted); }
+
+/* ---------- Settings ---------- */
+details.student { border:1px solid var(--border-soft); border-radius:10px; padding:0 12px; margin-top:10px; background:var(--surface-2); }
+details.student > summary { cursor:pointer; padding:11px 0; display:flex; gap:10px; align-items:baseline; list-style:none; }
+details.student > summary::-webkit-details-marker { display:none; }
+details.student > summary .muted { font-size:13px; color:var(--faint); }
+details.student[open] { padding-bottom:12px; }
+details.student:not([data-plan="start"]):not([data-plan="startSummary"]) .plan-start { display:none; }
+details.student:not([data-plan="startSummary"]) .plan-ss { display:none; }
+.sched-row { display:grid; grid-template-columns:1.2fr 1fr auto; gap:8px; margin-top:8px; }
+.swatches { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.swatch { width:28px; height:28px; min-height:0; padding:0; border-radius:50%; background:var(--sw); border:2px solid var(--surface); box-shadow:0 0 0 1px var(--border); }
+.swatch:hover { background:var(--sw); box-shadow:0 0 0 2px var(--faint); }
+.swatch.on { box-shadow:0 0 0 3px var(--text); }
+code { font-size:13px; background:var(--surface-3); padding:1px 5px; border-radius:4px; }
+
+.desktop-only { display:none !important; }
+body.desktop .desktop-only { display:revert !important; }
+body.desktop .browser-only { display:none !important; }
+
+/* Toast (with optional Undo) and dialogs */
+.toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:12px; background:var(--toast-bg); color:var(--toast-text);
+  padding:10px 18px; border-radius:10px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:30; box-shadow:0 6px 20px rgba(0,0,0,.25); }
+.toast.show { opacity:1; }
+.toast.show.actionable { pointer-events:auto; }
+.toast button { background:transparent; color:inherit; border-color:currentColor; }
+.modal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:grid; place-items:center; z-index:40; padding:16px; }
+.dialog { background:var(--surface); color:var(--text); border-radius:14px; padding:20px 22px; width:min(460px, 100%); box-shadow:0 20px 60px rgba(0,0,0,.35); }
+.dialog h3 { margin:0 0 8px; font-size:18px; }
+.dialog p { margin:6px 0; line-height:1.45; }
+.dialog ul { margin:8px 0; padding-left:20px; line-height:1.5; }
+.dialog .btns { justify-content:flex-end; margin-top:18px; }
+
+/* ---------- The document paper (copies her Word layouts) ---------- */
+.paper { background:#fff; width:210mm; min-height:297mm; padding:10mm 20mm 22mm; margin:0 auto; box-shadow:var(--paper-shadow);
+  font-family: Arial, "Liberation Sans", Helvetica, sans-serif; font-size:10.5pt; line-height:1.18; color:#000; position:relative; }
+.paper p { margin:0 0 9pt; }
+.paper .pghead { margin-bottom:2pt; }
+.paper .bar { background:#bfbfbf; padding:0 2pt; margin:0 0 10pt; min-height:1.2em; }
+.paper .bar.first { background:#d9d9d9; }
+.paper table { width:100%; border-collapse:collapse; margin-top:-2pt; }
+.paper th, .paper td { border:0.75pt solid #000; padding:0 4pt; vertical-align:top; text-align:left; font-weight:normal; }
+.paper .c-week { width:9%; }
+.paper .c-sess { width:20%; text-align:center; }
+.paper td.right { text-align:right; }
+.paper td.center { text-align:center; }
+.paper td.moved { background:#eeece1; }
+.paper tr.gap td { padding-bottom:12pt; }
+.paper tr.grand td { vertical-align:bottom; }
+.paper table.status { margin-top:14pt; }
+.paper sup { font-size:65%; line-height:0; }
+.paper .closing { margin-top:12pt; }
+.paper .greeting { text-align:center; font-family:"Segoe Script", "Lucida Handwriting", "Brush Script MT", cursive; font-style:italic; font-weight:bold; font-size:10.5pt; }
+.paper .pfooter { position:absolute; left:20mm; right:20mm; bottom:12mm; display:flex; justify-content:space-between; gap:12px; }
+.paper .empty { color:#999; font-style:italic; }
+
+@media print {
+  @page { size:A4; margin:17mm 20mm; }
+  html { color-scheme:light !important; background:#fff !important; }
+  body { background:#fff !important; color:#000; }
+  .topbar, .editor, .previewBar, .toast, .modal, .view:not(#view-editor) { display:none !important; }
+  .app, #view-editor { display:block !important; padding:0; }
+  .previewWrap { overflow:visible; }
+  .paper { box-shadow:none; width:auto; min-height:0; padding:0; margin:0; zoom:1 !important; }
+  .paper .pghead, .paper .pfooter { display:none; }  /* printed in the page margins instead, on every page */
+  .paper .empty { display:none; }
+  .paper tr { break-inside:avoid; }
+  /* Engines without @page margin boxes (WebKit, Firefox): print the header/footer inside the page instead.
+     The footer follows the content: pinning it to the page bottom with mm heights breaks under
+     display scaling (WebKitGTK prints at the desktop's scale factor, e.g. 125%). */
+  body.no-margin-boxes .paper .pghead { display:block; }
+  body.no-margin-boxes .paper .pfooter { display:flex; position:static; margin-top:18pt; }
+}
+</style>
+<!-- Page header/footer text for printing; filled in by renderPreview() -->
+<style id="pageStyle"></style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">🧾 Tuition Invoices</div>
+  <nav class="tabs" aria-label="Screens">
+    <button class="tab" data-view="home">This month</button>
+    <button class="tab" data-view="docs">Invoices</button>
+    <button class="tab" data-view="settings">Settings</button>
+  </nav>
+  <span class="saved" id="savedState" aria-live="polite"></span>
+</header>
+
+<!-- ================= THIS MONTH ================= -->
+<section class="view" id="view-home">
+  <div class="page">
+    <div class="card welcome" id="welcome" hidden>
+      <div class="body">
+        <div class="cardtitle">👋 Welcome! Let’s set things up <button class="link" id="wizSkip">Skip for now</button></div>
+        <div class="wiz-steps"><span></span><span></span><span></span></div>
+
+        <div data-step="1">
+          <h3>1 · Your details</h3>
+          <div class="hint">These appear at the top of every invoice.</div>
+          <label>Your name</label><input data-bind="tutor.name" placeholder="e.g. Siti Aminah">
+          <div class="row">
+            <div><label>Phone</label><input data-bind="tutor.phone" placeholder="e.g. +60 1x-xxx xxxx"></div>
+            <div><label>Email</label><input data-bind="tutor.email" placeholder="you@example.com"></div>
+          </div>
+        </div>
+
+        <div data-step="2" hidden>
+          <h3>2 · Where parents should pay</h3>
+          <div class="hint">Fill in the accounts you use. You can leave one empty if you don’t use it.</div>
+          <div id="wizBanks"></div>
+        </div>
+
+        <div data-step="3" hidden>
+          <h3>3 · Add your students</h3>
+          <div class="hint">Name, how they are billed, and the price per session. You can add more details (schedule, PDF name, notes) later in Settings › Students.</div>
+          <div id="wizStudents"></div>
+          <div class="wizstu wizadd">
+            <div><label style="margin-top:0">Student name</label><input id="wizName" placeholder="Full name"></div>
+            <div><label style="margin-top:0">Billing</label><select id="wizPlan"></select></div>
+            <div><label style="margin-top:0">RM / session</label><input id="wizRate" type="number" min="0" step="any"></div>
+          </div>
+          <div class="btns"><button id="wizAdd">＋ Add student</button></div>
+        </div>
+
+        <div class="btns" style="justify-content:flex-end">
+          <button id="wizBack">Back</button>
+          <button class="primary" id="wizNext">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pagehead">
+      <div><h2 id="homeTitle">This month</h2><p class="sub" id="homeSub"></p></div>
+      <div class="stats" id="homeStats"></div>
+    </div>
+
+    <div class="card"><div class="body">
+      <div class="cardtitle">To do</div>
+      <div id="taskList"></div>
+    </div></div>
+
+    <div class="card"><div class="body">
+      <div class="cardtitle">Waiting for payment <span id="owedTotal"></span></div>
+      <div id="owedList"></div>
+    </div></div>
+
+    <div class="card" id="draftCard" hidden><div class="body">
+      <div class="cardtitle">Other drafts</div>
+      <div id="draftList"></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ================= INVOICES (all documents) ================= -->
+<section class="view" id="view-docs" hidden>
+  <div class="page">
+    <div class="pagehead">
+      <div><h2>Invoices</h2><p class="sub">Every invoice and summary you’ve made.</p></div>
+      <button class="primary" id="newDocBtn">＋ New document</button>
+    </div>
+    <div class="card"><div class="body">
+      <div class="filters">
+        <select id="fStudent" aria-label="Student"></select>
+        <select id="fStatus" aria-label="Status">
+          <option value="all">All</option><option value="unpaid">Waiting for payment</option>
+          <option value="draft">Drafts</option><option value="paid">Paid</option><option value="summary">Summaries</option>
+        </select>
+      </div>
+      <div id="histList"></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section class="view" id="view-settings" hidden>
+  <div class="page narrow">
+    <h2>Settings</h2>
+
+    <div class="card" id="tutorCard"><div class="body">
+      <div class="cardtitle">My details</div>
+      <label>Your name (shown in the grey bar at the top of invoices)</label>
+      <input data-bind="tutor.name" placeholder="e.g. Siti Aminah">
+      <div class="row">
+        <div><label>Phone</label><input data-bind="tutor.phone" placeholder="e.g. +60 1x-xxx xxxx"></div>
+        <div><label>Email</label><input data-bind="tutor.email" placeholder="you@example.com"></div>
+      </div>
+      <label>Closing message</label>
+      <input data-bind="tutor.thanks" placeholder="Thank you very much ☺☺">
+    </div></div>
+
+    <div class="card"><div class="body">
+      <div class="cardtitle">Bank accounts</div>
+      <div class="hint">Each student picks which account appears on their invoice.</div>
+      <div id="bankList"></div>
+      <div class="btns"><button id="addBank">＋ Add bank account</button></div>
+    </div></div>
+
+    <div class="card" id="studentCard"><div class="body">
+      <div class="cardtitle">Students</div>
+      <div class="hint">Click a student to change their details. <b>Billing</b> decides what the “This month” list asks you to make.</div>
+      <div id="studentList"></div>
+      <div class="btns"><button id="addStudent">＋ Add student</button></div>
+    </div></div>
+
+    <div class="card"><div class="body">
+      <div class="cardtitle">Appearance</div>
+      <label>Colour theme</label>
+      <select id="themeSel" aria-label="Colour theme" style="width:auto">
+        <option value="classic">Classic</option>
+        <optgroup label="Catppuccin">
+          <option value="latte">Latte (light)</option>
+          <option value="frappe">Frappé</option>
+          <option value="macchiato">Macchiato</option>
+          <option value="mocha">Mocha (dark)</option>
+          <option value="auto">Auto: Latte / Mocha</option>
+        </optgroup>
+      </select>
+      <div class="swatches" id="accentPick" hidden></div>
+      <div class="hint">Invoices always print in black and white, whatever theme you choose.</div>
+    </div></div>
+
+    <div class="card"><div class="body">
+      <div class="cardtitle">WhatsApp message</div>
+      <div class="hint">Used by “Copy WhatsApp message” after saving a PDF. Words in {curly brackets} are filled in for you:
+        <code>{student}</code> <code>{month}</code> <code>{invoice}</code> <code>{total}</code> <code>{sessions}</code> <code>{bank}</code> <code>{account}</code> <code>{accountName}</code> <code>{thanks}</code></div>
+      <label>For invoices</label><textarea rows="5" data-bind="prefs.waInvoice"></textarea>
+      <label>For lesson summaries</label><textarea rows="3" data-bind="prefs.waSummary"></textarea>
+    </div></div>
+
+    <div class="card"><div class="body">
+      <div class="cardtitle">Backup &amp; data</div>
+      <div class="hint" id="dataHint">Everything is saved in this browser. Make a backup now and then.</div>
+      <div class="btns">
+        <button class="desktop-only" id="folderBtn">📂 Open invoices folder</button>
+        <button id="exportBtn">⬇ Save a backup</button>
+        <button id="importBtn">⬆ Restore a backup</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ================= EDITOR ================= -->
+<section class="view app" id="view-editor" hidden>
+  <div class="editor">
+    <div class="edhead">
+      <button class="small" id="backBtn">← Back</button>
+      <div><h2 id="edTitle"></h2><p class="sub" id="edSub"></p></div>
+      <span class="pill" id="edStatus"></span>
+    </div>
+
+    <div class="card" id="docCard"><div class="body">
+      <div class="row">
+        <div><label>Month</label><input type="month" data-bind="draft.month"></div>
+        <div data-show="end start"><label>Price per session (RM)</label><input type="number" min="0" step="any" data-bind="draft.rate"></div>
+      </div>
+
+      <section data-show="start">
+        <h3>Booked slots</h3>
+        <div id="slotList"></div>
+        <div class="btns">
+          <button id="addSlot">＋ Add slot</button>
+          <button id="fillSlots" class="small">Fill from weekly schedule</button>
+        </div>
+        <div class="hint" id="schedHint"></div>
+      </section>
+
+      <section data-show="end summary">
+        <h3>Lessons</h3>
+        <div id="lessonList"></div>
+        <div class="quick" id="quickAdd"></div>
+        <div class="btns">
+          <button id="addLesson">＋ Add lesson</button>
+          <button id="sortLessons" class="small">Sort by date</button>
+        </div>
+        <div class="hint">Tip: press <b>Enter</b> in the last topic to add the next lesson.</div>
+        <datalist id="subjects">
+          <option value="Math"><option value="Chemistry"><option value="Biology"><option value="Physics">
+          <option value="English"><option value="Bahasa Melayu"><option value="Science"><option value="Additional Math">
+        </datalist>
+      </section>
+
+      <div class="summary" data-show="end start"><span id="sumLeft"></span><b id="sumRight"></b></div>
+
+      <div class="btns">
+        <button class="primary big" id="printBtn">🖨 Print / Save PDF</button>
+        <button class="desktop-only" id="paperPrintBtn">🖨 Print on paper</button>
+      </div>
+      <div class="result" id="pdfResult" hidden></div>
+
+      <details class="more-opts" id="moreOpts">
+        <summary>More options</summary>
+        <label>Document type</label>
+        <select id="kindSel">
+          <option value="end">Invoice with lesson summary (end of month)</option>
+          <option value="start">Invoice for booked slots (start of month)</option>
+          <option value="summary">Lesson summary – already paid (end of month)</option>
+        </select>
+        <div class="row">
+          <div><label>Invoice no. (empty = automatic)</label><input data-bind="draft.invNo" id="invNoInput"></div>
+          <div><label>Number in the PDF name</label><input type="number" min="0" step="1" data-bind="draft.seq"></div>
+        </div>
+
+        <section data-show="end start">
+          <h3>Extra charge / discount</h3>
+          <div class="row">
+            <div><label>Description</label><input data-bind="draft.adjLabel" placeholder="e.g. Extra session on Nov 30"></div>
+            <div><label>Amount RM (minus for discount)</label><input type="number" step="any" data-bind="draft.adjAmount"></div>
+          </div>
+        </section>
+
+        <section data-show="end">
+          <h3>Last payment line</h3>
+          <div class="row">
+            <div><label>Date</label><input type="date" data-bind="draft.lastPayDate"></div>
+            <div><label>For invoice</label><input data-bind="draft.lastPayRef" placeholder="072026/ABC"></div>
+          </div>
+          <div class="hint">Filled in from the latest paid invoice. Leave both empty to hide this line.</div>
+        </section>
+
+        <section data-show="summary">
+          <h3>Payment status</h3>
+          <div class="row3">
+            <div><label>Status</label><input data-bind="draft.payStatus" placeholder="PAID"></div>
+            <div><label>Received on</label><input type="date" data-bind="draft.payDate"></div>
+            <div><label>For invoice</label><input data-bind="draft.payRef"></div>
+          </div>
+          <div class="btns">
+            <button class="small" id="relinkPay">↻ Fill from this month’s invoice</button>
+            <button class="small" id="copySlots">Copy dates from this month’s invoice</button>
+          </div>
+        </section>
+
+        <h3>Note</h3>
+        <textarea rows="3" data-bind="draft.notes" placeholder="Leave a blank line between paragraphs"></textarea>
+        <label>Greeting line</label>
+        <div class="inline"><input data-bind="draft.greeting" placeholder="Wishing you …"><button class="small" id="greetBtn">Suggest</button></div>
+
+        <div class="btns"><button class="danger" id="deleteDocBtn">🗑 Delete this document</button></div>
+      </details>
+    </div></div>
+  </div>
+
+  <div class="previewWrap" id="previewWrap">
+    <div class="previewBar"><span class="kind" id="kindLabel"></span><button class="primary" id="printBtn2">🖨 Print / Save PDF</button></div>
+    <div class="paper" id="paper"></div>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="modal" id="modal" hidden><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+  <h3 id="dlgTitle"></h3><div id="dlgBody"></div><div class="btns" id="dlgBtns"></div>
+</div></div>
+<script>
+const KEY = 'tuitionInvoiceMaker.v1';
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const GREETINGS = [
+  'Wishing you a fresh start, steady focus, and bright milestones this year.',
+  'Wishing you warm days, clear thinking, and steady progress this month.',
+  'Wishing you fresh energy, sharp focus, and bright milestones this month.',
+  'Wishing you blooming ideas, calm minds, and steady progress this month.',
+  'Wishing you sunny days, sharp focus, and confident steps this month.',
+  'Wishing you a restful break, fresh ideas, and bright milestones this month.',
+  'Wishing you bright days, clear minds, and steady progress this month.',
+  'Wishing you sharp focus, good habits, and bright milestones this month.',
+  'Wishing you a strong start, curious minds, and steady progress this month.',
+  'Wishing you cool breezes, sharp focus, and bright milestones this month.',
+  'Wishing you crisp air, sharp focus, and bright milestones this month.',
+  'Wishing you a joyful holiday, a restful mind, and a bright new year ahead.',
+];
+// How each student is billed → what "This month" asks her to make
+const PLANS = {
+  end:          { label:'End of month – invoice with lesson summary', short:'end of month + summary', kind:'end' },
+  start:        { label:'Start of month – invoice for booked slots only', short:'start of month', kind:'start' },
+  startSummary: { label:'Start of month invoice + lesson summary at month end', short:'start of month, summary at end', kind:'start' },
+};
+const KINDS = {
+  end:     { label:'Invoice with lesson summary', short:'Invoice', invoice:true },
+  start:   { label:'Invoice for booked slots', short:'Invoice', invoice:true },
+  summary: { label:'Lesson summary (already paid)', short:'Lesson summary', invoice:false },
+};
+const WA_DEFAULT = {
+  invoice: 'Hi! Here is the invoice for {student} for {month} ({invoice}).\nTotal: {total}\n\nBank transfer: {bank} {account} ({accountName})\n\n{thanks}',
+  summary: 'Hi! Here is the lesson summary for {student} for {month}.\n\n{thanks}',
+};
+
+const $ = s => document.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2, 10);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clone = o => JSON.parse(JSON.stringify(o));
+
+/* ---------- data shapes ---------- */
+const studentDefaults = () => ({ id: uid(), name:'', level:'', code:'', rate:100, plan:'end', bankId:'', title:'Private Tutor', brand:'',
+  filePrefix:'', fileLabel:'Invoice', summaryLabel:'Lesson Summary', firstSeq:1, firstSummarySeq:1, schedule:[], notes:'', greeting:false });
+// A document's life: draft (being written) → sent (PDF saved / printed) → paid (invoices only)
+const docDefaults = () => ({ id: uid(), kind:'end', studentId:'', month:'', invNo:'', seq:0, rate:0, lessons:[], slots:[],
+  lastPayDate:'', lastPayRef:'', payStatus:'', payDate:'', payRef:'', adjLabel:'', adjAmount:0, notes:'', greeting:'',
+  sent:false, sentAt:'', pdfPath:'', paid:false, paidDate:'' });
+const lessonDefaults = () => ({ date:'', subject:'', topic:'', sessions:1, more:[] });
+const slotDefaults = () => ({ date:'', time:'', sessions:1, movedDate:'', movedTime:'' });
+const prefDefaults = () => ({ theme:'classic', accent:'mauve', setupDone:false, waInvoice:WA_DEFAULT.invoice, waSummary:WA_DEFAULT.summary });
+
+function defaults() {
+  return normalize({
+    schema: 3,
+    prefs: prefDefaults(),
+    tutor: { name:'', phone:'', email:'', thanks:'Thank you very much ☺☺',
+      banks: [ { id:'b1', bank:'', accNo:'', accName:'' } ] },
+    students: [],
+    invoices: [],
+    draft: null,
+  });
+}
+
+// Fills in missing fields and upgrades data saved by older versions of the app.
+function normalize(s) {
+  if (!s || typeof s !== 'object' || !s.tutor) return null;
+  if (!s.schema || s.schema < 2) {                       // 1.0 → 1.1: several banks, per-student settings
+    const t = s.tutor;
+    s.tutor = { name:t.name || '', phone:t.phone || '', email:t.email || '', thanks:t.thanks || 'Thank you very much ☺☺',
+      banks:[{ id:'b1', bank:t.bank || '', accNo:t.accNo || '', accName:t.accName || '' }] };
+    s.students = (s.students || []).map(st => ({ ...st, bankId:'b1', title:t.title || 'Private Tutor', brand:t.brand || '',
+      filePrefix:st.name, fileLabel:t.fileLabel || 'Invoice' }));
+    s.schema = 2;
+  }
+  const fixDoc = d => ({ ...docDefaults(), ...d,
+    lessons: (d.lessons || []).map(l => ({ ...lessonDefaults(), ...l, more: l.more || [] })),
+    slots: (d.slots || []).map(x => ({ ...slotDefaults(), ...x })) });
+  s.tutor = { name:'', phone:'', email:'', thanks:'', ...s.tutor, banks: s.tutor.banks || [] };
+  s.students = (s.students || []).map(st => ({ ...studentDefaults(), ...st, schedule: st.schedule || [] }));
+  s.invoices = Array.isArray(s.invoices) ? s.invoices.map(fixDoc) : [];
+  s.draft = s.draft ? fixDoc(s.draft) : null;
+  if (s.schema < 3) {                                    // 1.2 → 1.3: documents have a status; no separate "history"
+    for (const d of s.invoices) { d.sent = true; d.sentAt = d.sentAt || ''; }   // anything saved before was already sent
+    if (s.draft && !s.invoices.some(d => d.id === s.draft.id) && hasContent(s.draft)) s.invoices.push({ ...s.draft, sent:false });
+    s.prefs = { ...s.prefs, setupDone: !!s.tutor.name };
+    s.schema = 3;
+  }
+  s.prefs = { ...prefDefaults(), ...(s.prefs || {}) };
+  // The open document IS the one in the list (same object), so edits are saved straight into it.
+  s.draft = s.draft ? (s.invoices.find(d => d.id === s.draft.id) || null) : null;
+  return s;
+}
+const validState = d => !!(d && d.tutor && Array.isArray(d.students) && Array.isArray(d.invoices));
+function load() {
+  try { const s = normalize(JSON.parse(localStorage.getItem(KEY))); if (validState(s)) return s; } catch (e) {}
+  return defaults();
+}
+
+// In the desktop app, preload.js / bridge.js provide window.invoiceApp and data lives in a file.
+// Opened as a plain web page, it falls back to the browser's localStorage.
+const api = window.invoiceApp || null;
+let S = null, dataPath = '', lastPdf = '', view = 'home', returnTo = 'home', saveTimer = 0;
+function persist() {
+  const el = $('#savedState');
+  if (api) api.save(JSON.stringify(S));
+  else try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { el.textContent = '⚠ Not saved – browser storage is full'; el.classList.add('err'); return; }
+  el.classList.remove('err'); el.textContent = 'Saving…';
+  clearTimeout(saveTimer); saveTimer = setTimeout(() => { el.textContent = api ? '✓ All changes saved' : '✓ Saved in this browser'; }, 350);
+}
+
+/* ---------- helpers ---------- */
+const pad2 = n => String(n).padStart(2, '0');
+function parseISO(iso) { const [y,m,d] = iso.split('-').map(Number); return new Date(y, m-1, d || 1); }
+function toISO(dt) { return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`; }
+const now = () => (window.__now ? parseISO(window.__now) : new Date());   // tests can pin "today"
+const todayISO = () => toISO(now());
+// Same as Excel WEEKNUM(date): weeks start on Sunday, week 1 contains Jan 1
+function weekNum(iso) {
+  const dt = parseISO(iso), jan1 = new Date(dt.getFullYear(), 0, 1);
+  const doy = Math.round((dt - jan1) / 864e5) + 1;
+  return Math.floor((doy + jan1.getDay() - 1) / 7) + 1;
+}
+const weekday = iso => iso ? DAYS[parseISO(iso).getDay()] : '';
+function ord(d) { if (d % 100 >= 11 && d % 100 <= 13) return 'th'; return ({1:'st',2:'nd',3:'rd'})[d % 10] || 'th'; }
+function fmtDate(iso) { if (!iso) return ''; const [y,m,d] = iso.split('-').map(Number); return `${MON[m-1]} ${d}<sup>${ord(d)}</sup>, ${y}`; }
+function shortDate(iso) { if (!iso) return ''; const [, m, d] = iso.split('-').map(Number); return `${d} ${MON[m-1]}`; }
+function monthLabel(ym) { if (!ym) return ''; const [y,m] = ym.split('-').map(Number); return `${MON[m-1]} ${y}`; }
+function monthName(ym) { if (!ym) return ''; const [y,m] = ym.split('-').map(Number); return `${MONTHS[m-1]} ${y}`; }
+function mmyyyy(ym) { if (!ym) return ''; const [y,m] = ym.split('-'); return m + y; }
+function num(n) { n = Number(n) || 0; return n.toLocaleString('en-MY', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }); }
+function nextMonth(ym) { let [y,m] = ym.split('-').map(Number); m++; if (m > 12) { m = 1; y++; } return `${y}-${pad2(m)}`; }
+function prevMonth(ym) { let [y,m] = ym.split('-').map(Number); m--; if (m < 1) { m = 12; y--; } return `${y}-${pad2(m)}`; }
+function thisMonth() { return todayISO().slice(0, 7); }
+function lastDay(ym) { const [y,m] = ym.split('-').map(Number); return toISO(new Date(y, m, 0)); }
+function student(id) { return S.students.find(s => s.id === id) || studentDefaults(); }
+function bankOf(st) { return S.tutor.banks.find(b => b.id === st.bankId) || S.tutor.banks[0] || {}; }
+const isInvoice = d => KINDS[d.kind] ? KINDS[d.kind].invoice : true;
+function autoNo(d) { return `${mmyyyy(d.month)}/${student(d.studentId).code || ''}`; }
+function invNo(d) { return (d.invNo || '').trim() || autoNo(d); }
+function sessionsOf(d) {
+  const list = d.kind === 'start' ? d.slots : d.lessons;
+  return list.filter(x => x.date).reduce((a, x) => a + (Number(x.sessions) || 0), 0);
+}
+function totals(d) {
+  const sessions = sessionsOf(d), fee = sessions * (Number(d.rate) || 0), adj = Number(d.adjAmount) || 0;
+  return { sessions, fee, adj, grand: fee + adj };
+}
+function hasContent(d) { return d.lessons.some(l => l.date || l.topic) || d.slots.some(s => s.date); }
+
+// Status shown everywhere: draft → sent → paid
+function docStatus(d) {
+  if (!d) return { key:'none', label:'Not started', cls:'todo' };
+  if (isInvoice(d) && d.paid) return { key:'paid', label:`Paid ${shortDate(d.paidDate)}`, cls:'ok' };
+  if (d.sent) return isInvoice(d) ? { key:'unpaid', label:'Sent · not paid', cls:'unpaid' } : { key:'sent', label:'Sent', cls:'ok' };
+  return { key:'draft', label:'Draft', cls:'' };
+}
+const pillHtml = d => { const s = docStatus(d); return `<span class="pill ${s.cls}">${esc(s.label)}</span>`; };
+
+/* ---------- toast (with optional Undo) and dialogs ---------- */
+function toast(msg, opts = {}) {
+  const t = $('#toast');
+  t.innerHTML = `<span>${esc(msg)}</span>${opts.undo ? '<button class="small" data-act="undo">Undo</button>' : ''}`;
+  t.classList.toggle('actionable', !!opts.undo);
+  t.onclick = e => { if (e.target.dataset.act === 'undo') { opts.undo(); t.classList.remove('show'); } };
+  t.classList.add('show'); clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), opts.undo ? 7000 : 2400);
+}
+// dialog({ title, body (html), buttons:[{ label, value, primary, danger }] }) → Promise of the chosen value
+function dialog({ title, body, buttons }) {
+  return new Promise(resolve => {
+    const m = $('#modal'), prev = document.activeElement;
+    $('#dlgTitle').textContent = title;
+    $('#dlgBody').innerHTML = body;
+    $('#dlgBtns').innerHTML = buttons.map((b, i) =>
+      `<button data-i="${i}" class="${b.primary ? 'primary' : ''} ${b.danger ? 'danger-fill' : ''}">${esc(b.label)}</button>`).join('');
+    m.hidden = false;
+    const close = v => { m.hidden = true; document.removeEventListener('keydown', onKey); prev?.focus?.(); resolve(typeof v === 'function' ? v() : v); };
+    const onKey = e => { if (e.key === 'Escape') close(null); };
+    document.addEventListener('keydown', onKey);
+    $('#dlgBtns').onclick = e => { const i = e.target.closest('button')?.dataset.i; if (i != null) close(buttons[+i].value); };
+    m.onclick = e => { if (e.target === m) close(null); };
+    setTimeout(() => ($('#dlgBody input') || $('#dlgBtns .primary') || $('#dlgBtns button'))?.focus(), 30);
+  });
+}
+const ask = (title, text, ok = 'OK', danger = false) =>
+  dialog({ title, body: `<p>${esc(text)}</p>`, buttons: [{ label:'Cancel', value:false }, { label:ok, value:true, primary:!danger, danger }] });
+const notify = (title, text) => dialog({ title, body: `<p>${esc(text)}</p>`, buttons: [{ label:'OK', value:true, primary:true }] });
+
+/* ---------- screens ---------- */
+function showView(name) {
+  if (name === 'editor' && !S.draft) name = returnTo;
+  if (name !== 'editor') returnTo = name;
+  view = name;
+  for (const v of ['home', 'docs', 'settings', 'editor']) $('#view-' + v).hidden = v !== name;
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.view === (name === 'editor' ? returnTo : name)));
+  if (name === 'home') renderHome();
+  if (name === 'docs') renderHistory();
+  if (name === 'settings') renderSettings();
+  if (name === 'editor') { renderDoc(); fitPaper(); }
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.tab').forEach(b => { b.onclick = () => showView(b.dataset.view); });
+$('#backBtn').onclick = () => showView(returnTo);
+// Re-draw whatever is on screen after data changed
+function refresh() {
+  if (view === 'home') renderHome();
+  if (view === 'docs') renderHistory();
+  if (view === 'editor' && S.draft) { renderEditorHead(); renderSendPanel(); renderPreview(); }
+}
+
+/* ---------- making documents ---------- */
+function docsOf(sid, summary) { return S.invoices.filter(i => i.studentId === sid && (summary ? i.kind === 'summary' : isInvoice(i))); }
+function findDoc(sid, kind, month) {
+  return S.invoices.find(d => d.studentId === sid && d.month === month && (kind === 'summary' ? d.kind === 'summary' : isInvoice(d)));
+}
+function nextSeq(sid, kind) {
+  const st = student(sid), fam = docsOf(sid, kind === 'summary');
+  const max = Math.max(0, ...fam.map(d => Number(d.seq) || 0));
+  return max ? max + 1 : (kind === 'summary' ? st.firstSummarySeq : st.firstSeq) || 1;
+}
+function suggestMonth(sid, kind) {
+  const fam = docsOf(sid, kind === 'summary').sort((a, b) => b.month.localeCompare(a.month));
+  if (fam[0]) return nextMonth(fam[0].month);
+  const late = now().getDate() >= 15;   // second half of the month?
+  if (kind === 'start') return late ? nextMonth(thisMonth()) : thisMonth();
+  return late ? thisMonth() : prevMonth(thisMonth());
+}
+function slotsFromSchedule(st, month) {
+  if (!st.schedule.length || !month) return [];
+  const [y, m] = month.split('-').map(Number), out = [];
+  for (let dt = new Date(y, m-1, 1); dt.getMonth() === m-1; dt.setDate(dt.getDate() + 1))
+    for (const sc of st.schedule) if (Number(sc.weekday) === dt.getDay()) out.push({ ...slotDefaults(), date: toISO(dt), time: sc.time || '' });
+  return out;
+}
+function lastPaid(sid, beforeMonth) {
+  return S.invoices.filter(i => i.studentId === sid && isInvoice(i) && i.paid && i.paidDate && (!beforeMonth || i.month < beforeMonth))
+    .sort((a, b) => b.month.localeCompare(a.month))[0];
+}
+function fillLastPayment(d) {
+  const p = lastPaid(d.studentId, d.month);
+  d.lastPayDate = p ? p.paidDate : ''; d.lastPayRef = p ? invNo(p) : '';
+}
+function monthInvoice(sid, month) { return S.invoices.find(i => i.studentId === sid && i.month === month && isInvoice(i)); }
+function linkPayment(d) {
+  const inv = monthInvoice(d.studentId, d.month);
+  if (inv && inv.paid) { d.payStatus = 'PAID'; d.payDate = inv.paidDate; d.payRef = invNo(inv); }
+  else { d.payStatus = inv ? 'UNPAID' : ''; d.payDate = ''; d.payRef = inv ? invNo(inv) : ''; }
+}
+function blankDoc(sid, kind, month) {
+  const st = student(sid);
+  return { ...docDefaults(), kind, studentId: sid, month, seq: nextSeq(sid, kind), rate: st.rate,
+    notes: kind === 'summary' ? '' : (st.notes || ''), greeting: st.greeting && kind !== 'summary' ? GREETINGS[Number(month.slice(5)) - 1] : '' };
+}
+function lessonsFromSlots(inv) {
+  return inv.slots.filter(s => s.date).sort((a, b) => (a.movedDate || a.date).localeCompare(b.movedDate || b.date))
+    .map(s => ({ ...lessonDefaults(), date: s.movedDate || s.date, sessions: s.sessions || 1 }));
+}
+function makeSummary(inv) {
+  const d = blankDoc(inv.studentId, 'summary', inv.month);
+  d.invNo = invNo(inv);
+  d.lessons = lessonsFromSlots(inv);
+  linkPayment(d);
+  return d;
+}
+const summaryExists = (sid, month) => S.invoices.some(i => i.kind === 'summary' && i.studentId === sid && i.month === month);
+// Create a document, add it to the list straight away, and open it.
+function createDoc(sid, kind, month) {
+  const st = student(sid);
+  let d;
+  if (kind === 'summary') {
+    const inv = S.invoices.find(i => i.studentId === sid && i.month === month && i.kind === 'start');
+    d = inv ? makeSummary(inv) : blankDoc(sid, 'summary', month);
+    if (!inv) linkPayment(d);
+  } else {
+    d = blankDoc(sid, kind, month);
+    if (kind === 'start') d.slots = slotsFromSchedule(st, month);
+    if (kind === 'end') fillLastPayment(d);
+  }
+  S.invoices.push(d);
+  persist();
+  openDoc(d);
+  toast(`${KINDS[kind].short} started: ${st.name} – ${monthName(month)}`);
+  return d;
+}
+// Kept for older code/tests: next document for a student, month chosen automatically
+function newDocument(sid, kind) {
+  kind = kind || (PLANS[student(sid).plan] || PLANS.end).kind;
+  return createDoc(sid, kind, suggestMonth(sid, kind));
+}
+function openDoc(d) { S.draft = d; hidePdfResult(); showView('editor'); }
+// Older versions had a separate "Save to history"; now every document is always in the list.
+function saveDraft() { if (S.draft && !S.invoices.includes(S.draft)) S.invoices.push(S.draft); persist(); }
+function markSent(d) { d.sent = true; d.sentAt = todayISO(); if (!(d.invNo || '').trim()) d.invNo = autoNo(d); persist(); }
+
+/* ---------- This month ---------- */
+// What each student needs this month, based on their billing style.
+function homeTasks() {
+  const ym = thisMonth(), day = now().getDate(), out = [];
+  const isSent = d => !!(d && d.sent);
+  for (const st of S.students) {
+    const add = (kind, month, due) => out.push({ st, kind, month, due, doc: findDoc(st.id, kind, month), key: `${st.id}|${kind}|${month}` });
+    if (st.plan === 'end') {
+      const prev = findDoc(st.id, 'end', prevMonth(ym));
+      const m = prev && !isSent(prev) ? prevMonth(ym) : (day <= 10 && !prev && docsOf(st.id).length ? prevMonth(ym) : ym);
+      add('end', m, lastDay(m));
+    } else {
+      const cur = findDoc(st.id, 'start', ym);
+      const m = cur && !isSent(cur) ? ym : day >= 15 ? nextMonth(ym) : ym;   // 2nd half of the month: next month's invoice
+      add('start', m, m + '-01');
+      if (st.plan === 'startSummary') {
+        const prevSum = findDoc(st.id, 'summary', prevMonth(ym)), prevInv = findDoc(st.id, 'start', prevMonth(ym));
+        const sm = prevInv && !isSent(prevSum) && day <= 15 ? prevMonth(ym) : ym;
+        add('summary', sm, lastDay(sm));
+      }
+    }
+  }
+  return out;
+}
+function renderHome() {
+  const tasks = homeTasks(), owed = S.invoices.filter(d => isInvoice(d) && d.sent && !d.paid);
+  const todo = tasks.filter(t => !t.doc || !t.doc.sent).length, owedSum = owed.reduce((a, d) => a + totals(d).grand, 0);
+  $('#homeTitle').textContent = monthName(thisMonth());
+  $('#homeSub').textContent = S.tutor.name ? `Hello, ${S.tutor.name.split(' ')[0]}! Here’s what needs doing.` : 'Here’s what needs doing.';
+  $('#homeStats').innerHTML = `<div class="stat"><b>${todo}</b><span>${todo === 1 ? 'thing' : 'things'} to do</span></div>
+    <div class="stat"><b>RM ${num(owedSum)}</b><span>waiting for payment</span></div>`;
+  renderWelcome();
+  renderTasks(tasks);
+  renderOwed(owed);
+  const shown = new Set(tasks.map(t => t.doc).filter(Boolean));
+  const drafts = S.invoices.filter(d => !d.sent && !shown.has(d)).sort((a, b) => b.month.localeCompare(a.month));
+  $('#draftCard').hidden = !drafts.length;
+  $('#draftList').innerHTML = drafts.map(d => `<div class="owe" data-id="${d.id}">
+      <div class="who">${esc(student(d.studentId).name)}</div>
+      <div class="what">${esc(KINDS[d.kind].short)} · ${esc(monthName(d.month))}</div>
+      <div class="side">${pillHtml(d)}<button class="small" data-act="open">Continue</button></div></div>`).join('');
+}
+function renderTasks(tasks = homeTasks()) {
+  const today = todayISO();
+  $('#taskList').innerHTML = tasks.map(t => {
+    const d = t.doc, s = docStatus(d), done = d && d.sent;
+    const late = !done && t.due < today;
+    const what = `${t.kind === 'summary' ? 'Lesson summary' : 'Invoice'} for ${monthName(t.month)}`
+      + ` · ${t.kind === 'start' ? 'booked slots' : t.kind === 'end' ? 'lessons taught' : 'after payment'}`;
+    const dueTxt = done ? (d.sentAt ? `sent ${shortDate(d.sentAt)}` : 'sent') : `${late ? 'was due' : 'due'} ${shortDate(t.due)}`;
+    const btn = !d ? (t.kind === 'summary' ? 'Write summary' : 'Create invoice') : d.sent ? 'Open' : 'Continue';
+    const pill = !d ? `<span class="pill ${late ? 'late' : 'todo'}">${late ? 'Late' : 'Not started'}</span>` : `<span class="pill ${s.cls}">${esc(s.label)}</span>`;
+    return `<div class="task" data-key="${t.key}">
+      <div class="who">${esc(t.st.name)} <small>${esc(t.st.level)}</small></div>
+      <div class="what">${esc(what)} · ${esc(dueTxt)}</div>
+      <div class="side">${pill}<button class="${!d || !d.sent ? 'primary' : ''} small" data-act="go">${btn}</button></div></div>`;
+  }).join('') || '<div class="empty-note">No students yet. <button class="link" data-act="addStudent">Add your first student</button></div>';
+}
+function renderOwed(owed = S.invoices.filter(d => isInvoice(d) && d.sent && !d.paid)) {
+  owed = owed.slice().sort((a, b) => a.month.localeCompare(b.month));
+  const sum = owed.reduce((a, d) => a + totals(d).grand, 0);
+  $('#owedTotal').innerHTML = owed.length ? `<span class="pill unpaid">RM ${num(sum)}</span>` : '';
+  $('#owedList').innerHTML = owed.map(d => `<div class="owe" data-id="${d.id}">
+      <div class="who">${esc(student(d.studentId).name)}</div>
+      <div class="what">${esc(invNo(d))} · ${esc(monthName(d.month))} · sent ${esc(shortDate(d.sentAt) || '')}</div>
+      <div class="side"><b>RM ${num(totals(d).grand)}</b><button class="primary small" data-act="pay">Mark paid</button></div></div>`).join('')
+    || '<div class="empty-note">Nothing outstanding. 🎉</div>';
+}
+$('#taskList').addEventListener('click', e => {
+  if (e.target.dataset.act === 'addStudent') { showView('settings'); $('#addStudent').click(); return; }
+  if (e.target.dataset.act !== 'go') return;
+  const t = homeTasks().find(x => x.key === e.target.closest('.task').dataset.key);
+  if (t.doc) openDoc(t.doc); else createDoc(t.st.id, t.kind, t.month);
+});
+for (const id of ['#owedList', '#draftList']) $(id).addEventListener('click', e => {
+  const act = e.target.dataset.act; if (!act) return;
+  const d = S.invoices.find(x => x.id === e.target.closest('[data-id]').dataset.id);
+  if (act === 'open') openDoc(d);
+  if (act === 'pay') payDialog(d);
+});
+
+/* ---------- first-run wizard ---------- */
+let wizStep = 1;
+function renderWelcome() {
+  const box = $('#welcome');
+  box.hidden = !!S.prefs.setupDone;
+  if (box.hidden) return;
+  box.querySelectorAll('[data-step]').forEach(el => { el.hidden = +el.dataset.step !== wizStep; });
+  box.querySelectorAll('.wiz-steps span').forEach((el, i) => el.classList.toggle('on', i < wizStep));
+  $('#wizBack').hidden = wizStep === 1;
+  $('#wizNext').textContent = wizStep === 3 ? 'Done ✓' : 'Next';
+  $('#wizBanks').innerHTML = S.tutor.banks.map((b, i) => `<div class="wizrow" data-wi="${i}">
+      <div><label>Bank</label><input data-bf="bank" value="${esc(b.bank)}"></div>
+      <div><label>Account no.</label><input data-bf="accNo" value="${esc(b.accNo)}"></div>
+      <div><label>Account name</label><input data-bf="accName" value="${esc(b.accName || S.tutor.name)}"></div></div>`).join('');
+  $('#wizStudents').innerHTML = S.students.map((s, i) => `<div class="wizstu" data-si="${i}">
+      <div><b>${esc(s.name)}</b><br><small class="hint">${esc(s.level)}</small></div>
+      <div class="hint" style="margin:0">${esc(PLANS[s.plan].label)}</div>
+      <div><label style="margin-top:0">RM / session</label><input type="number" min="0" step="any" data-f="rate" value="${esc(s.rate)}"></div></div>`).join('');
+  if (!$('#wizPlan').options.length) $('#wizPlan').innerHTML = Object.entries(PLANS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('');
+}
+function wizAddStudent() {
+  const name = $('#wizName').value.trim();
+  if (!name) { $('#wizName').focus(); return false; }
+  S.students.push({ ...studentDefaults(), name, filePrefix: name, plan: $('#wizPlan').value,
+    rate: Number($('#wizRate').value) || 0, bankId: S.tutor.banks[0]?.id || '' });
+  $('#wizName').value = ''; $('#wizRate').value = '';
+  persist(); renderWelcome(); $('#wizName').focus();
+  return true;
+}
+$('#wizAdd').onclick = wizAddStudent;
+$('#wizName').addEventListener('keydown', e => { if (e.key === 'Enter') wizAddStudent(); });
+$('#wizBanks').addEventListener('input', e => {
+  const row = e.target.closest('[data-wi]'); if (!row) return;
+  S.tutor.banks[+row.dataset.wi][e.target.dataset.bf] = e.target.value; persist();
+});
+$('#wizStudents').addEventListener('input', e => {
+  const row = e.target.closest('[data-si]'); if (!row) return;
+  S.students[+row.dataset.si].rate = Number(e.target.value) || 0; persist();
+});
+$('#wizNext').onclick = () => {
+  if (wizStep === 2) S.tutor.banks.forEach(b => { if (!b.accName) b.accName = S.tutor.name; });
+  if (wizStep < 3) { wizStep++; renderWelcome(); return; }
+  if ($('#wizName').value.trim()) wizAddStudent();   // typed a name but didn't press "Add"
+  S.prefs.setupDone = true; persist(); renderHome();
+  toast(S.students.length ? 'All set! Your students are listed below.' : 'All set! Add students any time in Settings.');
+};
+$('#wizBack').onclick = () => { wizStep = Math.max(1, wizStep - 1); renderWelcome(); };
+$('#wizSkip').onclick = () => { S.prefs.setupDone = true; persist(); renderHome(); };
+
+/* ---------- preview (the invoice paper) ---------- */
+function lessonLines(l) {
+  return [{ subject: l.subject, topic: l.topic }, ...(l.more || [])]
+    .map(p => [p.subject, p.topic].map(x => (x || '').trim()).filter(Boolean).map(esc).join(': ')).filter(Boolean);
+}
+function byWeek(items, dateOf) {
+  const groups = [];
+  for (const it of items.filter(x => dateOf(x)).sort((a, b) => dateOf(a).localeCompare(dateOf(b)))) {
+    const w = weekNum(dateOf(it)), g = groups[groups.length - 1];
+    if (g && g.week === w) g.items.push(it); else groups.push({ week: w, items: [it] });
+  }
+  return groups;
+}
+function lessonRows(lessons) {
+  let rows = '';
+  for (const g of byWeek(lessons, l => l.date)) g.items.forEach((l, i) => {
+    rows += `<tr>${i === 0 ? `<td rowspan="${g.items.length}">${g.week}</td>` : ''}
+      <td>${fmtDate(l.date)}${lessonLines(l).map(x => '<br>' + x).join('')}</td><td class="center">${num(l.sessions)}</td></tr>`;
+  });
+  return rows || `<tr><td></td><td class="empty">No lessons yet – add them on the left</td><td></td></tr>`;
+}
+function adjRow(d, tt, cls) {
+  if (!tt.adj) return '';
+  return `<tr><td></td><td>${esc(d.adjLabel || (tt.adj < 0 ? 'Discount' : 'Additional charge'))}</td>
+    <td class="${cls}">${tt.adj < 0 ? '- ' : ''}RM ${num(Math.abs(tt.adj))}</td></tr>`;
+}
+function tableEnd(d, tt) {   // end-of-month style
+  let rows = lessonRows(d.lessons);
+  if (d.lastPayDate || d.lastPayRef)
+    rows += `<tr><td></td><td>Last payment received by</td><td class="right">${fmtDate(d.lastPayDate)}${d.lastPayRef ? `<br>(${esc(d.lastPayRef)})` : ''}</td></tr>`;
+  rows += `<tr class="gap"><td></td><td>Total</td><td class="right">${num(tt.sessions)} Session${tt.sessions === 1 ? '' : 's'}<br>RM${num(d.rate)}/Hr/Session<br>RM ${num(tt.fee)}</td></tr>`;
+  rows += adjRow(d, tt, 'right');
+  rows += `<tr class="grand"><td></td><td><br>Total sum to pay</td><td class="right">RM ${num(tt.grand)}</td></tr>`;
+  return `<table><thead><tr><th class="c-week">Week</th><th>Date</th><th class="c-sess">Nr of session</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function slotLine(date, time, sessions) {
+  return `${weekday(date)} ${esc(time)}${Number(sessions) !== 1 ? ` (${num(sessions)} sessions)` : ''}`;
+}
+function tableStart(d, tt) {   // booked-slots style
+  let rows = '';
+  for (const g of byWeek(d.slots, s => s.date)) g.items.forEach((s, i) => {
+    const week = i === 0 ? `<td rowspan="${g.items.length}">${g.week}</td>` : '';
+    rows += s.movedDate
+      ? `<tr>${week}<td class="moved">${fmtDate(s.date)} (*)<br>${slotLine(s.date, s.time, s.sessions)}</td>
+           <td>Proposed slot → ${fmtDate(s.movedDate)}<br>${slotLine(s.movedDate, s.movedTime || s.time, 1)}</td></tr>`
+      : `<tr>${week}<td colspan="2">${fmtDate(s.date)}<br>${slotLine(s.date, s.time, s.sessions)}</td></tr>`;
+  });
+  if (!rows) rows = `<tr><td></td><td colspan="2" class="empty">No slots yet – add them on the left</td></tr>`;
+  rows += `<tr class="gap"><td></td><td>Number of sessions</td><td>${num(tt.sessions)} session${tt.sessions === 1 ? '' : 's'}<br>RM${num(d.rate)}/Hour/Session</td></tr>`;
+  rows += adjRow(d, tt, '');
+  rows += `<tr><td></td><td>Total sum to pay</td><td>RM ${num(tt.grand)}</td></tr>`;
+  return `<table><colgroup><col style="width:9%"><col style="width:46%"><col></colgroup>
+    <thead><tr><th>Weeks</th><th colspan="2">Dates</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function tableSummary(d) {   // lesson-summary style
+  const paidLine = d.payDate ? `<br>${fmtDate(d.payDate)}${d.payRef ? `<br>(${esc(d.payRef)})` : ''}` : '';
+  return `<table><thead><tr><th class="c-week">Week</th><th>Date</th><th class="c-sess">Hours per session</th></tr></thead>
+      <tbody>${lessonRows(d.lessons)}</tbody></table>
+    <table class="status"><tr><td class="c-week"></td><td>Status${d.payDate ? '<br>Payment received by' : ''}</td>
+      <td class="c-sess center">${esc(d.payStatus || 'PENDING')}${paidLine}</td></tr></table>`;
+}
+function notesHtml(text) {
+  const paras = String(text || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  if (!paras.length) return '';
+  return '<p>Note:</p>' + paras.map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+}
+function footerText(d) {
+  const st = student(d.studentId), brand = (st.brand || '').trim();
+  return `${brand ? brand + ' _' : ''}Students Lesson Detail _${isInvoice(d) ? 'Invoice_ ' : ''}${monthLabel(d.month)}`;
+}
+function setPageStyle(no, footer) {
+  const q = s => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]+/g, ' ') + '"';
+  const font = 'font-family: Arial, "Liberation Sans", Helvetica, sans-serif; font-size: 10.5pt;';
+  $('#pageStyle').textContent = `@page { size: A4; margin: 17mm 20mm;
+    @top-left { content: ${q(no)}; ${font} vertical-align: bottom; padding-bottom: 3mm; }
+    @bottom-left { content: ${q(footer)}; ${font} vertical-align: top; padding-top: 4mm; }
+    @bottom-right { content: ${q(no)}; ${font} vertical-align: top; padding-top: 4mm; } }`;
+}
+function renderPreview() {
+  const d = S.draft; if (!d) return;
+  const t = S.tutor, st = student(d.studentId), bank = bankOf(st), no = invNo(d), tt = totals(d);
+  const H = { end: ['Student Detail', 'Lesson Detail'], start: ['Student', 'Timeslot booked'], summary: ['Students’ Detail', 'Lessons Detail'] }[d.kind];
+  const table = d.kind === 'start' ? tableStart(d, tt) : d.kind === 'summary' ? tableSummary(d) : tableEnd(d, tt);
+  $('#paper').innerHTML = `
+    <div class="pghead">${esc(no)}</div>
+    <div class="bar first">${esc(t.name)}</div>
+    <p>${esc(st.title)}</p>
+    <p>Phone: ${esc(t.phone)}</p>
+    <p>Email: ${t.email ? `<u>${esc(t.email)}</u>` : ''}</p>
+    <div class="bar">Bank Transfer Detail</div>
+    <p>Bank: ${esc(bank.bank)}</p>
+    <p>Account No: ${esc(bank.accNo)}</p>
+    <p>Account Name: ${esc(bank.accName)}</p>
+    <div class="bar">${H[0]}</div>
+    <p>${esc(st.name)}${st.level ? ` (${esc(st.level)})` : ''}</p>
+    <div class="bar">${H[1]}</div>
+    ${table}
+    <div class="closing">${notesHtml(d.notes)}<p>${esc(t.thanks)}</p>${d.greeting ? `<p class="greeting">${esc(d.greeting)}</p>` : ''}</div>
+    <div class="pfooter"><span>${esc(footerText(d))}</span><span>${esc(no)}</span></div>`;
+  setPageStyle(no, footerText(d));
+
+  $('#sumLeft').textContent = `${num(tt.sessions)} session${tt.sessions === 1 ? '' : 's'} × RM${num(d.rate)}${tt.adj ? ` ${tt.adj < 0 ? '−' : '+'} RM${num(Math.abs(tt.adj))}` : ''}`;
+  $('#sumRight').textContent = `RM ${num(tt.grand)}`;
+  $('#invNoInput').placeholder = autoNo(d);
+  $('#kindLabel').textContent = `Preview · ${fileBaseName()}.pdf`;
+  fitPaper();
+}
+function fitPaper() {
+  const p = $('#paper'), w = $('#previewWrap').clientWidth;
+  p.style.zoom = 1;
+  const full = p.offsetWidth;
+  if (full > w && w > 0) p.style.zoom = (w / full).toFixed(3);
+}
+
+/* ---------- editor ---------- */
+function getPath(path) { return path.split('.').reduce((o, k) => o?.[k], S); }
+function setPath(path, v) { const ks = path.split('.'), last = ks.pop(); ks.reduce((o, k) => o[k], S)[last] = v; }
+function syncInputs() {
+  document.querySelectorAll('[data-bind]').forEach(el => { if (el !== document.activeElement) el.value = getPath(el.dataset.bind) ?? ''; });
+  const d = S.draft; if (!d) return;
+  $('#kindSel').value = d.kind;
+  document.querySelectorAll('[data-show]').forEach(el => { el.hidden = !el.dataset.show.split(' ').includes(d.kind); });
+  const st = student(d.studentId);
+  $('#schedHint').textContent = st.schedule.length
+    ? 'Weekly schedule: ' + st.schedule.map(s => `${DAYS[s.weekday]} ${s.time}`).join(', ') + ' (change it in Settings › Students).'
+    : 'Tip: give this student a weekly schedule in Settings › Students, then “Fill from weekly schedule” adds every slot of the month.';
+}
+document.addEventListener('input', e => {
+  const el = e.target, path = el.dataset.bind;
+  if (!path || (path.startsWith('draft.') && !S.draft)) return;
+  const before = getPath(path);
+  setPath(path, el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value);
+  document.querySelectorAll(`[data-bind="${path}"]`).forEach(o => { if (o !== el) o.value = el.value; });   // same field shown twice
+  if (path === 'draft.month' && el.value && el.value !== before) onMonthChange(before, el.value);
+  persist();
+  if (path.startsWith('draft.') || path.startsWith('tutor.')) { renderPreview(); if (path === 'draft.month') renderEditorHead(); }
+});
+// Changing the month keeps auto-filled parts in step, but never touches what she typed herself.
+function onMonthChange(oldM, newM) {
+  const d = S.draft, st = student(d.studentId);
+  if (GREETINGS.includes(d.greeting)) d.greeting = GREETINGS[Number(newM.slice(5)) - 1];
+  if (d.kind === 'start') {
+    const dates = list => list.map(s => s.date).join();
+    const untouched = d.slots.every(s => !s.movedDate) && dates(d.slots) === dates(slotsFromSchedule(st, oldM || ''));
+    if (untouched && st.schedule.length) { d.slots = slotsFromSchedule(st, newM); renderSlots(); toast(`Slots updated for ${monthName(newM)}`); }
+  }
+  if (d.kind === 'summary' && !d.payDate) linkPayment(d);
+  syncInputs();
+}
+function renderEditorHead() {
+  const d = S.draft, st = student(d.studentId);
+  $('#edTitle').textContent = `${st.name} · ${monthName(d.month)}`;
+  $('#edSub').textContent = KINDS[d.kind].label;
+  const s = docStatus(d);
+  $('#edStatus').className = 'pill ' + s.cls; $('#edStatus').textContent = s.label;
+}
+function renderDoc() {
+  if (!S.draft) return;
+  syncInputs(); renderEditorHead(); renderSlots(); renderLessons(); renderQuickAdd(); renderSendPanel(); renderPreview();
+}
+
+/* ---------- tutor bank accounts ---------- */
+function renderBanks() {
+  $('#bankList').innerHTML = S.tutor.banks.map((b, i) => `
+    <div class="box" data-i="${i}">
+      <div class="row">
+        <div><label>Bank</label><input data-bf="bank" value="${esc(b.bank)}" placeholder="Bank name"></div>
+        <div><label>Account no.</label><input data-bf="accNo" value="${esc(b.accNo)}"></div>
+      </div>
+      <label>Account name</label><input data-bf="accName" value="${esc(b.accName)}">
+      <div class="meta"><span></span><button class="small danger" data-act="delBank">Remove</button></div>
+    </div>`).join('') || '<div class="hint">No bank account yet.</div>';
+}
+$('#bankList').addEventListener('input', e => {
+  const box = e.target.closest('.box'); if (!box || !e.target.dataset.bf) return;
+  S.tutor.banks[+box.dataset.i][e.target.dataset.bf] = e.target.value;
+  persist(); renderStudents();
+});
+$('#bankList').addEventListener('click', async e => {
+  if (e.target.dataset.act !== 'delBank') return;
+  const i = +e.target.closest('.box').dataset.i;
+  if (!await ask('Remove this bank account?', `${S.tutor.banks[i].bank || 'This account'} will no longer appear on invoices.`, 'Remove', true)) return;
+  S.tutor.banks.splice(i, 1); persist(); renderBanks(); renderStudents();
+});
+$('#addBank').onclick = () => {
+  S.tutor.banks.push({ id: uid(), bank:'', accNo:'', accName: S.tutor.banks[0]?.accName || S.tutor.name || '' });
+  persist(); renderBanks(); renderStudents();
+};
+
+/* ---------- students ---------- */
+const openStudents = new Set();
+function renderStudents() {
+  const bankOpts = sel => S.tutor.banks.map(b => `<option value="${b.id}" ${b.id === sel ? 'selected' : ''}>${esc(b.bank || '(unnamed)')}${b.accNo ? ' – ' + esc(b.accNo) : ''}</option>`).join('');
+  const dayOpts = sel => DAYS.map((d, i) => `<option value="${i}" ${i === Number(sel) ? 'selected' : ''}>${d}</option>`).join('');
+  $('#studentList').innerHTML = S.students.map((s, i) => `
+    <details class="student" data-i="${i}" data-plan="${s.plan}" ${openStudents.has(s.id) ? 'open' : ''}>
+      <summary><b class="sname">${esc(s.name || '(new student)')}</b><span class="muted splan">${esc((PLANS[s.plan] || PLANS.end).short)} · RM ${num(s.rate)}</span></summary>
+      <div class="row3">
+        <div><label>Name</label><input data-f="name" value="${esc(s.name)}"></div>
+        <div><label>Level</label><input data-f="level" value="${esc(s.level)}" placeholder="e.g. Year 10"></div>
+        <div><label>Short code</label><input data-f="code" value="${esc(s.code)}" placeholder="ABC"></div>
+      </div>
+      <div class="hint">The short code goes into the invoice number, e.g. 112026/${esc(s.code || 'CODE')}.</div>
+      <label>Billing</label>
+      <select data-f="plan">${Object.entries(PLANS).map(([k, p]) => `<option value="${k}" ${k === s.plan ? 'selected' : ''}>${p.label}</option>`).join('')}</select>
+      <div class="row">
+        <div><label>Price per session (RM)</label><input type="number" min="0" step="any" data-f="rate" value="${esc(s.rate)}"></div>
+        <div><label>Bank account</label><select data-f="bankId">${bankOpts(s.bankId)}</select></div>
+      </div>
+      <div class="row">
+        <div><label>Title line</label><input data-f="title" value="${esc(s.title)}" placeholder="Private Tutor"></div>
+        <div><label>Brand in footer</label><input data-f="brand" value="${esc(s.brand)}" placeholder="e.g. your agency name (or empty)"></div>
+      </div>
+      <div class="row3">
+        <div><label>PDF name starts with</label><input data-f="filePrefix" value="${esc(s.filePrefix)}" placeholder="${esc(s.name)}"></div>
+        <div><label>Invoice PDF label</label><input data-f="fileLabel" value="${esc(s.fileLabel)}"></div>
+        <div class="plan-ss"><label>Summary PDF label</label><input data-f="summaryLabel" value="${esc(s.summaryLabel)}"></div>
+      </div>
+      <div class="hint">PDF name: ${esc(s.filePrefix || s.name)}_MMYYYY - ${esc(s.fileLabel)} 01</div>
+      <div class="plan-start">
+        <label>Weekly schedule (fills in the booked slots)</label>
+        ${s.schedule.map((sc, j) => `<div class="sched-row" data-j="${j}">
+            <select data-sf="weekday">${dayOpts(sc.weekday)}</select>
+            <input data-sf="time" value="${esc(sc.time)}" placeholder="4-5pm">
+            <button class="small danger" data-act="delSched" aria-label="Remove">✕</button></div>`).join('')}
+        <div class="btns"><button class="small" data-act="addSched">＋ Add weekly time</button></div>
+      </div>
+      <label>Default note on invoices</label>
+      <textarea rows="2" data-f="notes" placeholder="Optional">${esc(s.notes)}</textarea>
+      <label class="check"><input type="checkbox" data-f="greeting" ${s.greeting ? 'checked' : ''}> Add a monthly greeting line</label>
+      <div class="btns"><button class="small danger" data-act="del">Remove student</button></div>
+    </details>`).join('') || '<div class="hint">No students yet.</div>';
+}
+$('#studentList').addEventListener('toggle', e => {
+  const s = S.students[+e.target.dataset.i]; if (!s) return;
+  e.target.open ? openStudents.add(s.id) : openStudents.delete(s.id);
+}, true);
+$('#studentList').addEventListener('input', e => {
+  const box = e.target.closest('.student'); if (!box) return;
+  const s = S.students[+box.dataset.i], f = e.target.dataset.f, sf = e.target.dataset.sf;
+  if (f) {
+    s[f] = f === 'rate' ? Number(e.target.value) || 0 : f === 'greeting' ? e.target.checked : e.target.value;
+    if (f === 'plan' || f === 'rate') { box.dataset.plan = s.plan; box.querySelector('.splan').textContent = `${PLANS[s.plan].short} · RM ${num(s.rate)}`; }
+    if (f === 'name') box.querySelector('.sname').textContent = s.name || '(new student)';
+  }
+  if (sf) {
+    const sc = s.schedule[+e.target.closest('.sched-row').dataset.j];
+    sc[sf] = sf === 'weekday' ? Number(e.target.value) : e.target.value;
+  }
+  persist();
+});
+$('#studentList').addEventListener('click', async e => {
+  const act = e.target.dataset.act; if (!act) return;
+  const s = S.students[+e.target.closest('.student').dataset.i];
+  if (act === 'addSched') s.schedule.push({ weekday: 1, time: '' });
+  if (act === 'delSched') s.schedule.splice(+e.target.closest('.sched-row').dataset.j, 1);
+  if (act === 'del') {
+    if (!await ask(`Remove ${s.name || 'this student'}?`, 'Their invoices stay in the Invoices list.', 'Remove', true)) return;
+    S.students = S.students.filter(x => x !== s);
+  }
+  persist(); renderStudents();
+});
+$('#addStudent').onclick = () => {
+  const s = { ...studentDefaults(), bankId: S.tutor.banks[0]?.id || '' };
+  S.students.push(s); openStudents.add(s.id);
+  persist(); renderStudents();
+  $('#studentList .student:last-child input').focus();
+};
+function renderSettings() {
+  syncInputs(); renderBanks(); renderStudents(); renderThemePicker();
+}
+
+/* ---------- document type (More options) ---------- */
+$('#kindSel').onchange = e => {
+  const d = S.draft, k = e.target.value;
+  d.kind = k;
+  if (k === 'start' && !d.slots.length) d.slots = slotsFromSchedule(student(d.studentId), d.month);
+  if (k === 'end' && !d.lastPayDate && !d.lastPayRef) fillLastPayment(d);
+  if (k === 'summary') { linkPayment(d); const inv = monthInvoice(d.studentId, d.month); if (inv && !d.lessons.length) d.lessons = lessonsFromSlots(inv); }
+  if (!d.sent) d.seq = nextSeq(d.studentId, k);
+  persist(); renderDoc();
+};
+
+/* ---------- booked slots ---------- */
+function renderSlots() {
+  if (!S.draft) return;
+  $('#slotList').innerHTML = S.draft.slots.map((s, i) => `
+    <div class="box" data-i="${i}">
+      <div class="top">
+        <div><label>Date</label><input type="date" data-f="date" value="${esc(s.date)}"></div>
+        <div><label>Time</label><input data-f="time" value="${esc(s.time)}" placeholder="4-5pm"></div>
+        <div><label>Sessions</label><input type="number" min="0" step="0.5" data-f="sessions" value="${esc(s.sessions)}"></div>
+      </div>
+      ${s.movedDate ? `<div class="moved"><div class="row">
+        <div><label>Moved to</label><input type="date" data-f="movedDate" value="${esc(s.movedDate)}"></div>
+        <div><label>New time</label><input data-f="movedTime" value="${esc(s.movedTime)}" placeholder="${esc(s.time)}"></div></div></div>` : ''}
+      <div class="meta"><span class="wk">${s.date ? `${weekday(s.date)} · week ${weekNum(s.date)}` : '⚠ pick a date'}</span>
+        <span class="acts"><button class="small" data-act="move">${s.movedDate ? 'Undo move' : 'Reschedule'}</button>
+        <button class="small danger" data-act="del">Delete</button></span></div>
+    </div>`).join('') || '<div class="hint">No slots yet.</div>';
+}
+$('#slotList').addEventListener('input', e => {
+  const box = e.target.closest('.box'); if (!box || !e.target.dataset.f) return;
+  const s = S.draft.slots[+box.dataset.i], f = e.target.dataset.f;
+  s[f] = f === 'sessions' ? Number(e.target.value) || 0 : e.target.value;
+  if (f === 'date') box.querySelector('.wk').textContent = s.date ? `${weekday(s.date)} · week ${weekNum(s.date)}` : '⚠ pick a date';
+  persist(); renderPreview();
+});
+$('#slotList').addEventListener('click', e => {
+  const act = e.target.dataset.act; if (!act) return;
+  const d = S.draft, i = +e.target.closest('.box').dataset.i, s = d.slots[i];
+  if (act === 'del') {
+    d.slots.splice(i, 1);
+    toast('Slot deleted', { undo: () => { d.slots.splice(i, 0, s); persist(); if (S.draft === d) { renderSlots(); renderPreview(); } } });
+  }
+  if (act === 'move') { if (s.movedDate) { s.movedDate = ''; s.movedTime = ''; } else { s.movedDate = s.date || d.month + '-01'; } }
+  persist(); renderSlots(); renderPreview();
+});
+$('#addSlot').onclick = () => {
+  const prev = S.draft.slots[S.draft.slots.length - 1];
+  S.draft.slots.push({ ...slotDefaults(), time: prev?.time || '' });
+  persist(); renderSlots(); renderPreview();
+  $('#slotList .box:last-child input[type=date]').focus();
+};
+$('#fillSlots').onclick = async () => {
+  const st = student(S.draft.studentId);
+  if (!st.schedule.length) { notify('No weekly schedule yet', `Add ${st.name}’s weekly lesson time in Settings › Students first.`); return; }
+  if (S.draft.slots.length && !await ask('Replace the slots?', 'The current slots will be replaced by the weekly schedule for this month.', 'Replace')) return;
+  S.draft.slots = slotsFromSchedule(st, S.draft.month);
+  persist(); renderSlots(); renderPreview();
+};
+
+/* ---------- lessons ---------- */
+function renderLessons() {
+  if (!S.draft) return;
+  $('#lessonList').innerHTML = S.draft.lessons.map((l, i) => `
+    <div class="box" data-i="${i}">
+      <div class="top">
+        <div><label>Date</label><input type="date" data-f="date" value="${esc(l.date)}"></div>
+        <div><label>Subject</label><input list="subjects" data-f="subject" value="${esc(l.subject)}"></div>
+        <div><label>${S.draft.kind === 'summary' ? 'Hours' : 'Sessions'}</label><input type="number" min="0" step="0.5" data-f="sessions" value="${esc(l.sessions)}"></div>
+      </div>
+      <div class="topic"><label>Topic</label><input data-f="topic" value="${esc(l.topic)}" placeholder="What was covered"></div>
+      ${l.more.map((m, j) => `<div class="more" data-j="${j}">
+        <input list="subjects" data-mf="subject" value="${esc(m.subject)}" placeholder="Subject">
+        <input data-mf="topic" value="${esc(m.topic)}" placeholder="Topic">
+        <button class="small danger" data-act="delMore" aria-label="Remove">✕</button></div>`).join('')}
+      <div class="meta"><span class="wk">${l.date ? 'Week ' + weekNum(l.date) : '⚠ pick a date'}</span>
+        <span class="acts"><button class="small" data-act="more">＋ Subject</button><button class="small" data-act="dup">Duplicate</button><button class="small danger" data-act="del">Delete</button></span></div>
+    </div>`).join('') || '<div class="hint">No lessons yet – use the buttons below.</div>';
+}
+// The subjects this student usually has, most frequent first (for one-click "Quick add")
+function usualSubjects(sid) {
+  const count = {};
+  for (const d of S.invoices) if (d.studentId === sid)
+    for (const l of d.lessons) for (const p of [l, ...(l.more || [])]) if (p.subject) count[p.subject] = (count[p.subject] || 0) + 1;
+  const list = Object.entries(count).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 5);
+  return list.length ? list : ['Math', 'Chemistry', 'Biology', 'Physics'];
+}
+function renderQuickAdd() {
+  if (!S.draft) return;
+  $('#quickAdd').innerHTML = 'Quick add:' + usualSubjects(S.draft.studentId)
+    .map(s => `<button class="chip" data-subject="${esc(s)}">＋ ${esc(s)}</button>`).join('');
+}
+function defaultLessonDate(d) {
+  const t = todayISO();
+  return t.slice(0, 7) === d.month && !d.lessons.some(l => l.date === t) ? t : '';
+}
+function addLesson(subject) {
+  const d = S.draft, prev = d.lessons[d.lessons.length - 1];
+  d.lessons.push({ ...lessonDefaults(), subject: subject ?? prev?.subject ?? '', date: defaultLessonDate(d) });
+  persist(); renderLessons(); renderPreview();
+  const box = $('#lessonList .box:last-child');
+  (subject ? box.querySelector('[data-f=topic]') : box.querySelector('[data-f=date]')).focus();
+}
+$('#quickAdd').addEventListener('click', e => { const s = e.target.dataset.subject; if (s) addLesson(s); });
+$('#lessonList').addEventListener('input', e => {
+  const box = e.target.closest('.box'); if (!box) return;
+  const l = S.draft.lessons[+box.dataset.i], f = e.target.dataset.f, mf = e.target.dataset.mf;
+  if (f) {
+    l[f] = f === 'sessions' ? Number(e.target.value) || 0 : e.target.value;
+    if (f === 'date') box.querySelector('.wk').textContent = l.date ? 'Week ' + weekNum(l.date) : '⚠ pick a date';
+  }
+  if (mf) l.more[+e.target.closest('.more').dataset.j][mf] = e.target.value;
+  persist(); renderPreview();
+});
+// Enter in a topic → next lesson's topic, or a new lesson after the last one
+$('#lessonList').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || (e.target.dataset.f !== 'topic' && e.target.dataset.mf !== 'topic')) return;
+  e.preventDefault();
+  const next = e.target.closest('.box').nextElementSibling;
+  if (next) next.querySelector('[data-f=topic]').focus(); else addLesson();
+});
+$('#lessonList').addEventListener('click', e => {
+  const act = e.target.dataset.act; if (!act) return;
+  const d = S.draft, i = +e.target.closest('.box').dataset.i, l = d.lessons[i];
+  if (act === 'del') {
+    d.lessons.splice(i, 1);
+    toast('Lesson deleted', { undo: () => { d.lessons.splice(i, 0, l); persist(); if (S.draft === d) { renderLessons(); renderPreview(); } } });
+  }
+  if (act === 'dup') d.lessons.splice(i + 1, 0, { ...clone(l), date:'' });
+  if (act === 'more') l.more.push({ subject:'', topic:'' });
+  if (act === 'delMore') l.more.splice(+e.target.closest('.more').dataset.j, 1);
+  persist(); renderLessons(); renderPreview();
+});
+$('#addLesson').onclick = () => addLesson();
+$('#sortLessons').onclick = () => {
+  S.draft.lessons.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  persist(); renderLessons(); renderPreview();
+};
+$('#copySlots').onclick = async () => {
+  const inv = monthInvoice(S.draft.studentId, S.draft.month);
+  if (!inv || !inv.slots.some(s => s.date)) { notify('Nothing to copy', `No booked-slot invoice found for ${student(S.draft.studentId).name} in ${monthName(S.draft.month)}.`); return; }
+  if (S.draft.lessons.length && !await ask('Replace the lessons?', 'The current lessons will be replaced by the dates from the invoice.', 'Replace')) return;
+  S.draft.lessons = lessonsFromSlots(inv);
+  persist(); renderLessons(); renderPreview();
+};
+$('#relinkPay').onclick = () => { linkPayment(S.draft); persist(); syncInputs(); renderPreview(); };
+$('#greetBtn').onclick = () => {
+  S.draft.greeting = GREETINGS[Number((S.draft.month || thisMonth()).slice(5)) - 1];
+  persist(); syncInputs(); renderPreview();
+};
+$('#deleteDocBtn').onclick = () => {
+  const d = S.draft, i = S.invoices.indexOf(d);
+  S.invoices.splice(i, 1); S.draft = null; persist();
+  showView(returnTo);
+  toast(`${KINDS[d.kind].short} deleted`, { undo: () => { S.invoices.splice(i, 0, d); persist(); openDoc(d); } });
+};
+
+/* ---------- payments ---------- */
+function markPaid(id, date) {
+  const inv = S.invoices.find(x => x.id === id);
+  inv.paidDate = date; inv.paid = !!date;
+  if (inv.paid && !inv.sent) markSent(inv);
+  // fill the payment line of that month's summary, if it hasn't got one yet
+  for (const sm of S.invoices)
+    if (sm.kind === 'summary' && sm.studentId === inv.studentId && sm.month === inv.month && (!sm.payDate || !inv.paid)) linkPayment(sm);
+  persist(); refresh();
+  toast(inv.paid ? `Marked as paid on ${shortDate(date)}` : 'Marked as not paid');
+}
+async function payDialog(d) {
+  const r = await dialog({
+    title: d.paid ? 'Payment' : 'Mark as paid',
+    body: `<p><b>${esc(student(d.studentId).name)}</b> · ${esc(invNo(d))} · RM ${num(totals(d).grand)}</p>
+      <label>Payment received on</label><input type="date" id="payDate" value="${esc(d.paidDate || todayISO())}">`,
+    buttons: [
+      ...(d.paid ? [{ label:'Mark as not paid', value:'unpaid' }] : []),
+      { label:'Cancel', value:null },
+      { label: d.paid ? 'Save date' : 'Mark paid', value: () => $('#payDate').value || todayISO(), primary:true },
+    ],
+  });
+  if (r === 'unpaid') markPaid(d.id, '');
+  else if (r) markPaid(d.id, r);
+}
+
+/* ---------- Invoices list ---------- */
+function renderHistory() {
+  $('#fStudent').innerHTML = '<option value="">All students</option>' +
+    S.students.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  $('#fStudent').value = renderHistory.student || '';
+  $('#fStatus').value = renderHistory.status || 'all';
+  const fs = renderHistory.student, fst = renderHistory.status || 'all';
+  const order = { start:0, end:0, summary:1 };
+  const list = S.invoices.filter(d => (!fs || d.studentId === fs) && (fst === 'all'
+      || (fst === 'summary' ? d.kind === 'summary' : docStatus(d).key === fst)))
+    .sort((a, b) => b.month.localeCompare(a.month) || student(a.studentId).name.localeCompare(student(b.studentId).name) || order[a.kind] - order[b.kind]);
+  if (!list.length) {
+    $('#histList').innerHTML = `<div class="empty-note">${S.invoices.length ? 'Nothing matches these filters.' : 'No invoices yet. Start one from “This month”.'}</div>`;
+    return;
+  }
+  $('#histList').innerHTML = `<table class="hist"><thead><tr><th>Document</th><th>Student</th><th>Month</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>` +
+    list.map(d => {
+      const summary = d.kind === 'summary';
+      const canSummarise = d.kind === 'start' && student(d.studentId).plan === 'startSummary' && !summaryExists(d.studentId, d.month);
+      return `<tr data-id="${d.id}">
+        <td class="doc">${esc(invNo(d))}<small>${esc(KINDS[d.kind].short)}</small></td>
+        <td>${esc(student(d.studentId).name)}</td>
+        <td>${esc(monthLabel(d.month))}</td>
+        <td class="num">${summary ? '—' : 'RM ' + num(totals(d).grand)}</td>
+        <td>${pillHtml(d)}</td>
+        <td class="acts"><div>${canSummarise ? '<button class="small" data-act="summary">＋ Summary</button>' : ''}
+          ${!summary && d.sent && !d.paid ? '<button class="small primary" data-act="pay">Mark paid</button>' : ''}
+          ${!summary && d.paid ? '<button class="small" data-act="pay">Paid date</button>' : ''}
+          <button class="small" data-act="open">Open</button></div></td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
+}
+$('#fStudent').onchange = e => { renderHistory.student = e.target.value; renderHistory(); };
+$('#fStatus').onchange = e => { renderHistory.status = e.target.value; renderHistory(); };
+$('#histList').addEventListener('click', e => {
+  const act = e.target.dataset.act; if (!act) return;
+  const d = S.invoices.find(x => x.id === e.target.closest('tr').dataset.id);
+  if (act === 'open') openDoc(d);
+  if (act === 'pay') payDialog(d);
+  if (act === 'summary') {
+    const sm = makeSummary(d);
+    S.invoices.push(sm); persist(); openDoc(sm);
+    toast('Summary started – fill in the topics');
+  }
+});
+$('#newDocBtn').onclick = async () => {
+  const opts = S.students.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const r = await dialog({
+    title: 'New document',
+    body: `<label>Student</label><select id="ndStudent">${opts}</select>
+      <label>Type</label><select id="ndKind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select>
+      <label>Month</label><input type="month" id="ndMonth">`,
+    buttons: [{ label:'Cancel', value:null }, { label:'Create', primary:true, value: () => ({ sid: $('#ndStudent').value, kind: $('#ndKind').value, month: $('#ndMonth').value }) }],
+  });
+  if (r && r.sid && r.month) createDoc(r.sid, r.kind, r.month);
+};
+// keep the "New document" dialog's type/month in step with the chosen student
+document.addEventListener('change', e => {
+  if (e.target.id !== 'ndStudent') return;
+  const st = student(e.target.value), kind = (PLANS[st.plan] || PLANS.end).kind;
+  $('#ndKind').value = kind; $('#ndMonth').value = suggestMonth(st.id, kind);
+});
+new MutationObserver(() => { if ($('#ndStudent') && !$('#ndMonth').value) $('#ndStudent').dispatchEvent(new Event('change', { bubbles:true })); })
+  .observe($('#dlgBody'), { childList:true });
+
+/* ---------- checks before saving ---------- */
+function checkDoc(d) {
+  const st = student(d.studentId), bank = bankOf(st), issues = [];
+  if (!S.tutor.name.trim()) issues.push('Your name is empty (Settings › My details).');
+  if (isInvoice(d)) {
+    if (!bank.accNo) issues.push(`The account number for ${bank.bank || 'the bank'} is empty (Settings › Bank accounts).`);
+    if (!(Number(d.rate) > 0)) issues.push(`The price per session is RM ${num(d.rate)}.`);
+    if (!(totals(d).grand > 0)) issues.push('The total to pay is RM 0.');
+  }
+  const list = d.kind === 'start' ? d.slots : d.lessons, noun = d.kind === 'start' ? 'slot' : 'lesson';
+  if (!list.length) issues.push(`There are no ${noun}s yet.`);
+  const undated = list.filter(x => !x.date).length;
+  if (undated) issues.push(`${undated} ${noun}${undated > 1 ? 's have' : ' has'} no date (${undated > 1 ? 'they' : 'it'} won’t appear on the PDF).`);
+  if (d.kind !== 'start') {
+    const noTopic = d.lessons.filter(l => l.date && !l.topic.trim()).length;
+    if (noTopic) issues.push(`${noTopic} lesson${noTopic > 1 ? 's have' : ' has'} no topic.`);
+  }
+  if (d.kind === 'summary' && d.payStatus !== 'PAID') issues.push('This month’s invoice isn’t marked as paid yet.');
+  return issues;
+}
+async function preflight(d) {
+  const issues = checkDoc(d);
+  if (!issues.length) return true;
+  return await dialog({
+    title: 'Before you save…',
+    body: `<p>Please check:</p><ul>${issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`,
+    buttons: [{ label:'Save anyway', value:true }, { label:'Go back and fix', value:false, primary:true }],
+  }) === true;
+}
+
+/* ---------- PDF / print / sending ---------- */
+// e.g. "<prefix>_082026 - Invoice 07" (prefix and label are set per student)
+function fileBaseName(d = S.draft) {
+  const st = student(d.studentId);
+  const label = (d.kind === 'summary' ? st.summaryLabel : st.fileLabel) || '';
+  const seq = Number(d.seq) > 0 ? ' ' + pad2(d.seq) : '';
+  return `${st.filePrefix || st.name || 'Invoice'}_${mmyyyy(d.month)}${label ? ' - ' + label : ''}${seq}`.replace(/[\\/:*?"<>|]/g, '-');
+}
+let oldTitle = document.title;
+async function doPrint(opts = {}) {
+  if (!opts.skipCheck && !await preflight(S.draft)) return { cancelled: true };
+  oldTitle = document.title;
+  document.title = fileBaseName();   // browsers use the title as the suggested PDF name
+  window.print();
+  markSent(S.draft); refresh(); renderSendPanel();
+  return { printed: true };
+}
+window.addEventListener('afterprint', () => { document.title = oldTitle; });
+
+// Desktop app: render the document straight to Documents\Tuition Invoices\YYYY-MM\<name>.pdf
+async function savePdfFlow() {
+  if (!await preflight(S.draft)) return { cancelled: true };
+  const d = S.draft;
+  hidePdfResult();
+  const btns = [$('#printBtn'), $('#printBtn2')];
+  btns.forEach(b => b.disabled = true);
+  try {
+    if (!(d.invNo || '').trim()) d.invNo = autoNo(d);   // the number is fixed once a PDF exists
+    const r = await api.savePdf(d.month, fileBaseName(d));
+    if (r.error) { notify('Could not save the PDF', r.error); return r; }
+    lastPdf = r.path; d.pdfPath = r.path;
+    markSent(d); refresh(); renderSendPanel();
+    return r;
+  } catch (err) {
+    notify('Could not save the PDF', err.message);
+    return { error: err.message };
+  } finally { btns.forEach(b => b.disabled = false); }
+}
+// After sending: where the PDF is, a ready-made WhatsApp message, and "Mark paid"
+function renderSendPanel() {
+  const d = S.draft, box = $('#pdfResult');
+  if (!d || !d.sent) { box.hidden = true; return; }
+  const path = d.pdfPath || '';
+  box.innerHTML = `<b>✅ ${api && path ? 'Saved as PDF' : 'Printed / saved'}${d.sentAt ? ' on ' + esc(shortDate(d.sentAt)) : ''}</b>
+    ${path ? `<div class="path">${esc(path)}</div>` : ''}
+    <div class="btns">
+      ${api && path ? '<button class="small" data-act="open">Open PDF</button><button class="small" data-act="show">Show in folder</button>' : ''}
+      <button class="small" data-act="wa">📋 Copy WhatsApp message</button>
+      ${isInvoice(d) && !d.paid ? '<button class="small primary" data-act="pay">Mark paid</button>' : ''}
+    </div>`;
+  box.hidden = false;
+}
+function hidePdfResult() { $('#pdfResult').hidden = true; }
+function waMessage(d) {
+  const st = student(d.studentId), bank = bankOf(st), tt = totals(d);
+  const vars = { student: st.name, month: monthName(d.month), invoice: invNo(d), total: 'RM ' + num(tt.grand), sessions: num(tt.sessions),
+    rate: 'RM ' + num(d.rate), bank: bank.bank || '', account: bank.accNo || '', accountName: bank.accName || '', tutor: S.tutor.name, thanks: S.tutor.thanks };
+  const tpl = isInvoice(d) ? S.prefs.waInvoice : S.prefs.waSummary;
+  return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* fall back below */ }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch { /* ignore */ }
+  ta.remove(); return ok;
+}
+$('#pdfResult').addEventListener('click', async e => {
+  const act = e.target.dataset.act, d = S.draft;
+  if (act === 'open') api.openPath(d.pdfPath || lastPdf);
+  if (act === 'show') api.showInFolder(d.pdfPath || lastPdf);
+  if (act === 'pay') payDialog(d);
+  if (act === 'wa') {
+    const text = waMessage(d);
+    if (await copyText(text)) toast('Message copied – paste it in WhatsApp');
+    else dialog({ title: 'Copy this message', body: `<textarea rows="8" readonly>${esc(text)}</textarea>`, buttons: [{ label:'Done', value:true, primary:true }] });
+  }
+});
+const primaryAction = () => (api ? savePdfFlow() : doPrint());
+$('#printBtn').onclick = primaryAction; $('#printBtn2').onclick = primaryAction;
+$('#paperPrintBtn').onclick = () => doPrint();
+
+/* ---------- colour theme ---------- */
+const ACCENTS = ['rosewater','flamingo','pink','mauve','red','maroon','peach','yellow','green','teal','sky','sapphire','blue','lavender'];
+function renderThemePicker() {
+  const { theme, accent } = S.prefs;
+  $('#themeSel').value = theme;
+  const box = $('#accentPick');
+  box.hidden = theme === 'classic';
+  box.innerHTML = ACCENTS.map(a => `<button class="swatch${a === accent ? ' on' : ''}" data-accent="${a}"
+    style="--sw:var(--ctp-${a})" title="${a[0].toUpperCase() + a.slice(1)}" aria-label="Accent colour ${a}"></button>`).join('');
+}
+function setTheme(theme, accent) {
+  S.prefs.theme = theme; S.prefs.accent = accent;
+  applyTheme(S.prefs); persist(); renderThemePicker();
+}
+$('#themeSel').onchange = e => setTheme(e.target.value, S.prefs.accent);
+$('#accentPick').addEventListener('click', e => { const a = e.target.dataset.accent; if (a) setTheme(S.prefs.theme, a); });
+// "Auto" follows the computer's light/dark setting, also when it changes while the app is open
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (S && S.prefs.theme === 'auto') applyTheme(S.prefs); });
+
+/* ---------- backup ---------- */
+async function restoreFrom(text) {
+  try {
+    const data = normalize(JSON.parse(text));
+    if (!validState(data)) throw new Error('not a backup file');
+    if (!await ask('Restore this backup?', 'Everything in the app will be replaced by the backup.', 'Restore', true)) return;
+    S = data; persist(); init(); toast('Backup restored');
+  } catch (err) { notify('Could not read that file', err.message); }
+}
+$('#exportBtn').onclick = async () => {
+  const text = JSON.stringify(S, null, 2);
+  if (api) { if (await api.exportBackup(text)) toast('Backup saved'); return; }
+  const blob = new Blob([text], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `tuition-invoices-backup-${todayISO()}.json`;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('#importBtn').onclick = async () => {
+  if (api) { const text = await api.importBackup(); if (text != null) restoreFrom(text); return; }
+  $('#importFile').click();
+};
+$('#importFile').onchange = async e => {
+  const f = e.target.files[0]; if (f) restoreFrom(await f.text());
+  e.target.value = '';
+};
+$('#folderBtn').onclick = () => api && api.openFolder();
+
+/* ---------- start ---------- */
+function init() {
+  applyTheme(S.prefs); renderThemePicker();
+  wizStep = 1;
+  showView('home');
+}
+async function boot() {
+  // Only Chromium (Chrome, Edge, Electron, WebView2) prints CSS @page margin boxes.
+  if (!/\b(Chrome|Chromium|Edg)\//.test(navigator.userAgent)) document.body.classList.add('no-margin-boxes');
+  if (api) {
+    document.body.classList.add('desktop');
+    for (const b of [$('#printBtn'), $('#printBtn2')]) b.textContent = '📄 Save PDF';
+    let r = null;
+    try { r = await api.load(); } catch (err) { console.error(err); }
+    const data = r && r.data ? normalize(r.data) : null;
+    S = validState(data) ? data : defaults();
+    dataPath = (r && r.path) || '';
+    $('#dataHint').textContent = `Everything is saved automatically in ${dataPath}. A copy is also kept each day in the “backups” folder next to it.`;
+    api.onSaveError(msg => { const el = $('#savedState'); el.textContent = '⚠ Not saved'; el.classList.add('err'); toast('⚠ Could not save: ' + msg); });
+    persist();   // creates the data file on first launch
+    if (r && r.recovered) setTimeout(() => notify('Your data was restored', `Your data file was damaged, so it was restored from the backup “${r.recovered}”.`), 300);
+    else if (r && r.damaged) setTimeout(() => notify('Starting fresh', 'Your data file was damaged and no backup was found. The damaged file was kept in the Tuition Invoices folder.'), 300);
+  } else {
+    S = load();
+    persist();
+  }
+  init();
+  window.__ready = true;
+}
+window.addEventListener('resize', () => { if (view === 'editor') fitPaper(); });
+window.addEventListener('beforeprint', () => { $('#paper').style.zoom = 1; });
+window.addEventListener('afterprint', () => { if (view === 'editor') fitPaper(); });
+boot();
+</script>
+</body>
+</html>
