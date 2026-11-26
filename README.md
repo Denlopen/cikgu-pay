@@ -23,7 +23,6 @@ The app starts empty: a short setup asks for your details, bank account and stud
 Get the Windows installer from the [Releases](../../releases) page:
 - `Tuition-Invoice-Maker-Tauri-Setup-x.y.z.exe`: small (about 1 MB), uses Windows' built-in WebView2. Recommended.
 - `Tuition-Invoice-Maker-Tauri-Smooth-Setup-x.y.z.exe`: the same app with animations.
-- `Tuition-Invoice-Maker-Setup-x.y.z.exe`: the Electron build (about 120 MB).
 
 The installers aren't code-signed. The first time you run one, Windows SmartScreen may show "Windows protected your PC". Click **More info → Run anyway**.
 
