@@ -161,8 +161,12 @@ button.link { border:none; background:none; color:var(--accent); padding:4px 0; 
 .wizstu { display:grid; grid-template-columns:1.4fr 1.8fr .8fr; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
 .wizstu:first-child { border-top:none; }
 .wizadd input, .wizadd select { height:40px; }
-.wizadd { grid-template-columns:1.3fr .8fr 1.7fr .7fr; align-items:end; border-top:1px dashed var(--border); margin-top:6px; }
-.wizadd.banks { grid-template-columns:1.3fr .8fr 1.5fr .7fr 1.1fr; }
+/* Add-a-student row: name, level and price on the first line; billing and bank each on a full-width
+   line, so the long billing names are never cut off */
+.wizadd { grid-template-columns:1.5fr 1fr .8fr; grid-template-areas:"name level rate" "plan plan plan"; row-gap:8px; align-items:end; border-top:1px dashed var(--border); margin-top:6px; }
+.wizadd.banks { grid-template-areas:"name level rate" "plan plan plan" "bank bank bank"; }
+.wizadd .wn { grid-area:name; } .wizadd .wl { grid-area:level; } .wizadd .wr { grid-area:rate; }
+.wizadd .wp { grid-area:plan; } .wizadd .wizbank { grid-area:bank; }
 
 /* ---------- Invoices list ---------- */
 .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
@@ -362,10 +366,10 @@ body.desktop .browser-only { display:none !important; }
           <div class="hint">Name, level, how they are billed and the price per session. The invoice shows the name with the level in brackets, e.g. “Student Name (Year 10)”. More details (short code, schedule, PDF name, notes) are in Settings › Students.</div>
           <div id="wizStudents"></div>
           <div class="wizstu wizadd" id="wizAddRow">
-            <div><label style="margin-top:0">Student name</label><input id="wizName" placeholder="Full name"></div>
-            <div><label style="margin-top:0">Level</label><input id="wizLevel" placeholder="e.g. Year 10"></div>
-            <div><label style="margin-top:0">Billing</label><select id="wizPlan"></select></div>
-            <div><label style="margin-top:0">RM / session</label><input id="wizRate" type="number" min="0" step="any"></div>
+            <div class="wn"><label style="margin-top:0">Student name</label><input id="wizName" placeholder="Full name"></div>
+            <div class="wl"><label style="margin-top:0">Level</label><input id="wizLevel" placeholder="e.g. Year 10"></div>
+            <div class="wr"><label style="margin-top:0">RM / session</label><input id="wizRate" type="number" min="0" step="any"></div>
+            <div class="wp"><label style="margin-top:0">Billing</label><select id="wizPlan"></select></div>
             <div class="wizbank"><label style="margin-top:0">Bank account</label><select id="wizBank"></select></div>
           </div>
           <div class="btns"><button id="wizAdd">＋ Add student</button></div>
