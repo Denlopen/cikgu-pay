@@ -37,6 +37,11 @@ module.exports = function selftest(win) {
       const out = {};
       setTheme('mocha', 'blue');   // everything below runs in a dark theme; PDFs must not change
       out.theme = document.documentElement.dataset.theme + '/' + document.documentElement.dataset.accent;
+      // First-run tour: shows on first start; walk it with its own buttons
+      for (let i = 0; i < 30 && $('#tour').hidden; i++) await new Promise(r => setTimeout(r, 100));
+      out.tour = { shown: !$('#tour').hidden, steps: [] };
+      for (let i = 0; i < 20 && !$('#tour').hidden; i++) { out.tour.steps.push($('#tourTitle').textContent); $('#tourNext').click(); }
+      out.tour.done = S.prefs.toursDone;
       // Test fixtures: three made-up students, one per billing style (the app itself starts with none)
       const fx = [
         { name: 'Student A', code: 'TSA', rate: 100, plan: 'end', filePrefix: 'Student A', fileLabel: 'Invoice', firstSeq: 1 },
@@ -96,7 +101,8 @@ module.exports = function selftest(win) {
     if (res.run.fatal) throw new Error('in page: ' + res.run.fatal);
     await new Promise(r => setTimeout(r, 300));
     wc.reload(); await loaded(); await ready();
-    res.afterReload = await wc.executeJavaScript('({ tutor: S.tutor.name, invoices: S.invoices.length, docs: S.invoices.map(d => d.kind + " " + invNo(d) + " " + docStatus(d).label), view, theme: document.documentElement.dataset.theme + "/" + document.documentElement.dataset.accent, savedPrefs: S.prefs })');
+    await new Promise(r => setTimeout(r, 900));   // a tour would have started by now
+    res.afterReload = await wc.executeJavaScript('({ tourShownAgain: !$("#tour").hidden, toursDone: S.prefs.toursDone, tutor: S.tutor.name, invoices: S.invoices.length, docs: S.invoices.map(d => d.kind + " " + invNo(d) + " " + docStatus(d).label), view, theme: document.documentElement.dataset.theme + "/" + document.documentElement.dataset.accent, savedPrefs: S.prefs })');
     const pdfs = ['end', 'start', 'summary'].map(k => res.run[k] && res.run[k].pdf).filter(Boolean);
     res.files = {
       dataFileBytes: fs.statSync(path.join(dir, 'invoice-data.json')).size,

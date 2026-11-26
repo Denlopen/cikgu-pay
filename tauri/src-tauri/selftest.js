@@ -18,6 +18,11 @@
       setTheme('mocha', 'blue');   // everything below runs in a dark theme; PDFs must not change
       await sleep(400);            // the Smooth edition switches theme with a short animation
       out.theme = document.documentElement.dataset.theme + '/' + document.documentElement.dataset.accent;
+      // First-run tour: shows on first start; walk it with its own buttons
+      for (let i = 0; i < 30 && $('#tour').hidden; i++) await new Promise(r => setTimeout(r, 100));
+      out.tour = { shown: !$('#tour').hidden, steps: [] };
+      for (let i = 0; i < 20 && !$('#tour').hidden; i++) { out.tour.steps.push($('#tourTitle').textContent); $('#tourNext').click(); }
+      out.tour.done = S.prefs.toursDone;
       // Test fixtures: three made-up students, one per billing style (the app itself starts with none)
       const fx = [
         { name: 'Student A', code: 'TSA', rate: 100, plan: 'end', filePrefix: 'Student A', fileLabel: 'Invoice', firstSeq: 1 },
@@ -85,7 +90,8 @@
       await sleep(500);              // let the queued saves reach the disk
       location.reload();
     } else {
-      await report('afterReload', { tutor: S.tutor.name, invoices: S.invoices.length, docs: S.invoices.map(d => d.kind + ' ' + invNo(d) + ' ' + docStatus(d).label), view,
+      await sleep(900);   // a tour would have started by now
+      await report('afterReload', { tourShownAgain: !$('#tour').hidden, toursDone: S.prefs.toursDone, tutor: S.tutor.name, invoices: S.invoices.length, docs: S.invoices.map(d => d.kind + ' ' + invNo(d) + ' ' + docStatus(d).label), view,
         theme: document.documentElement.dataset.theme + '/' + document.documentElement.dataset.accent, savedPrefs: S.prefs });
       await invoke('selftest_finish');
     }

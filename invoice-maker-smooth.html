@@ -256,6 +256,23 @@ body.desktop .browser-only { display:none !important; }
 .emoji-grid button:hover, .emoji-grid button:focus-visible { background:var(--surface-hover); outline:none; }
 .emoji-empty { grid-column:1 / -1; color:var(--faint); font-size:13px; padding:10px 4px; }
 
+/* First-run tour: a spotlight "hole" over one part of the screen, with a speech-bubble card next to it */
+.tour { position:fixed; inset:0; z-index:60; }
+.tour-hole { position:fixed; border-radius:12px; box-shadow:0 0 0 9999px rgba(10,14,25,.58); pointer-events:none;
+  outline:3px solid var(--accent); outline-offset:2px; transition:left .3s ease, top .3s ease, width .3s ease, height .3s ease; }
+.tour-hole.center { width:0 !important; height:0 !important; outline:none; }
+.tour-tip { position:fixed; width:min(360px, calc(100vw - 24px)); background:var(--surface); color:var(--text); border-radius:14px;
+  box-shadow:0 18px 50px rgba(0,0,0,.4); padding:18px 20px 16px; transition:left .3s ease, top .3s ease; }
+.tour-tip h3 { margin:0 0 6px; font-size:18px; }
+.tour-tip p { margin:0; line-height:1.5; font-size:15px; }
+.tour-tip .tour-foot { display:flex; align-items:center; gap:8px; margin-top:16px; }
+.tour-tip .tour-count { font-size:13px; color:var(--muted); margin-right:auto; }
+.tour-dots { display:flex; gap:5px; margin-right:auto; }
+.tour-dots span { width:7px; height:7px; border-radius:50%; background:var(--border); }
+.tour-dots span.on { background:var(--accent); }
+.tour-tip .tour-skip { position:absolute; top:10px; right:12px; }
+@media (prefers-reduced-motion: reduce) { .tour-hole, .tour-tip { transition:none; } }
+
 /* ---------- The document paper (copies her Word layouts) ---------- */
 .paper { background:#fff; width:210mm; min-height:297mm; padding:10mm 20mm 22mm; margin:0 auto; box-shadow:var(--paper-shadow);
   font-family: Arial, "Liberation Sans", Helvetica, sans-serif; font-size:10.5pt; line-height:1.18; color:#000; position:relative; }
@@ -283,7 +300,7 @@ body.desktop .browser-only { display:none !important; }
   @page { size:A4; margin:17mm 20mm; }
   html { color-scheme:light !important; background:#fff !important; }
   body { background:#fff !important; color:#000; }
-  .topbar, .editor, .previewBar, .toast, .modal, .emoji-pop, .view:not(#view-editor) { display:none !important; }
+  .topbar, .editor, .previewBar, .toast, .modal, .emoji-pop, .tour, .view:not(#view-editor) { display:none !important; }
   .app, #view-editor { display:block !important; padding:0; }
   .previewWrap { overflow:visible; }
   .paper { box-shadow:none; width:auto; min-height:0; padding:0; margin:0; zoom:1 !important; }
@@ -533,6 +550,15 @@ html.smooth details.more-opts[open] > summary::before { transform: rotate(90deg)
     </div></div>
 
     <div class="card"><div class="body">
+      <div class="cardtitle">Help</div>
+      <div class="hint">See the short guided tour again.</div>
+      <div class="btns">
+        <button id="tourHomeBtn">▶ Tour of the main screens</button>
+        <button id="tourEditorBtn">▶ Tour of the invoice editor</button>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="body">
       <div class="cardtitle">Backup &amp; data</div>
       <div class="hint" id="dataHint">Everything is saved in this browser. Make a backup now and then.</div>
       <div class="btns">
@@ -652,6 +678,16 @@ html.smooth details.more-opts[open] > summary::before { transform: rotate(90deg)
   </div>
 </section>
 
+<div class="tour" id="tour" hidden>
+  <div class="tour-hole" id="tourHole"></div>
+  <div class="tour-tip" id="tourTip" role="dialog" aria-modal="true" aria-labelledby="tourTitle" aria-describedby="tourText">
+    <button class="link tour-skip" id="tourSkip">Skip tour</button>
+    <h3 id="tourTitle"></h3>
+    <p id="tourText"></p>
+    <div class="tour-foot"><div class="tour-dots" id="tourDots"></div>
+      <button id="tourBack">Back</button><button class="primary" id="tourNext">Next</button></div>
+  </div>
+</div>
 <div class="emoji-pop" id="emojiPop" hidden role="dialog" aria-label="Pick an emoji">
   <input id="emojiSearch" type="search" placeholder="Search emoji (e.g. heart, book, star)" autocomplete="off">
   <div class="emoji-cats" id="emojiCats"></div>
@@ -951,7 +987,7 @@ function newDocument(sid, kind) {
   kind = kind || (PLANS[student(sid).plan] || PLANS.end).kind;
   return createDoc(sid, kind, suggestMonth(sid, kind));
 }
-function openDoc(d) { S.draft = d; hidePdfResult(); showView('editor'); }
+function openDoc(d) { S.draft = d; hidePdfResult(); showView('editor'); maybeTour('editor'); }
 // Older versions had a separate "Save to history"; now every document is always in the list.
 function saveDraft() { if (S.draft && !S.invoices.includes(S.draft)) S.invoices.push(S.draft); persist(); }
 function markSent(d) { d.sent = true; d.sentAt = todayISO(); if (!(d.invNo || '').trim()) d.invNo = autoNo(d); persist(); }
@@ -1646,6 +1682,7 @@ function fileBaseName(d = S.draft) {
 }
 let oldTitle = document.title;
 async function doPrint(opts = {}) {
+  if (tour) endTour('skip');
   if (!opts.skipCheck && !await preflight(S.draft)) return { cancelled: true };
   oldTitle = document.title;
   document.title = fileBaseName();   // browsers use the title as the suggested PDF name
@@ -1656,8 +1693,11 @@ async function doPrint(opts = {}) {
 window.addEventListener('afterprint', () => { document.title = oldTitle; });
 
 // Desktop app: render the document straight to Documents\Tuition Invoices\YYYY-MM\<name>.pdf
+let pdfBusy = false;   // while a PDF is being made the page must not change (WebKitGTK printing can stall), so no tour pops up
 async function savePdfFlow() {
+  if (tour) endTour('skip');
   if (!await preflight(S.draft)) return { cancelled: true };
+  pdfBusy = true;
   const d = S.draft;
   hidePdfResult();
   const btns = [$('#printBtn'), $('#printBtn2')];
@@ -1672,7 +1712,7 @@ async function savePdfFlow() {
   } catch (err) {
     notify('Could not save the PDF', err.message);
     return { error: err.message };
-  } finally { btns.forEach(b => b.disabled = false); }
+  } finally { btns.forEach(b => b.disabled = false); pdfBusy = false; }
 }
 // After sending: where the PDF is, a ready-made WhatsApp message, and "Mark paid"
 function renderSendPanel() {
@@ -1877,11 +1917,147 @@ document.addEventListener('scroll', placeEmoji, true);
 attachEmoji();
 new MutationObserver(() => attachEmoji($('#studentList'))).observe($('#studentList'), { childList: true });
 
+/* ---------- first-run tour ----------
+   Two short tours: "home" runs the first time the app opens, "editor" the first time an invoice is opened.
+   Each step points at one thing on screen; steps whose target isn't visible are skipped.
+   Finished tours are remembered in S.prefs.toursDone, so they only show once (Settings › Help replays them). */
+const TOURS = {
+  home: [
+    { title: 'Welcome! 👋', text: 'This app makes your tuition invoices and lesson summaries, and keeps track of who has paid. Here’s a one-minute tour.', next: 'Start the tour', intro: true },
+    { el: () => $('.tabs [data-view="home"]'), title: 'This month', text: 'Your to-do list. Each month it shows which invoice or summary every student needs, and whether it’s done.' },
+    { el: () => $('#taskList').closest('.card'), title: 'To do', text: () => S.students.length
+        ? 'One line per job. Click “Create invoice”, “Write summary” or “Continue”. The coloured label shows the status: Not started, Draft, Sent or Paid.'
+        : 'Once you’ve added your students, each invoice or summary you need to make shows up here, with a button to start it.' },
+    { el: () => $('#owedList').closest('.card'), title: 'Waiting for payment', text: 'Invoices you’ve sent but haven’t been paid for yet, with the total owed. Click “Mark paid” when the money arrives.' },
+    { el: () => $('.tabs [data-view="docs"]'), title: 'Invoices', text: 'Every invoice and summary you’ve made. You can filter by student or status, and open any of them again.' },
+    { el: () => $('.tabs [data-view="settings"]'), title: 'Settings', text: 'Your details, bank accounts, students (billing style, price, weekly schedule), colour theme, WhatsApp message and backups.' },
+    { el: () => $('#savedState'), title: 'Saved automatically', text: 'There’s no Save button. Everything is saved as you type, and a backup copy is kept every day.' },
+    { el: () => $('#welcome'), title: 'Start here', text: 'Fill in your details, bank account and students. It takes about two minutes, and then you’re ready to make your first invoice.', last: 'Let’s go' },
+    { title: 'That’s it! ✨', text: 'You can see this tour again any time in Settings › Help.', last: 'Done', when: () => $('#welcome').hidden },
+  ],
+  editor: [
+    { el: () => $('#docCard .row'), title: 'Month and price', text: 'The month this document is for, and the price per session. Totals and week numbers are worked out for you.' },
+    { el: () => $('#lessonList')?.closest('section'), title: 'Lessons', text: 'Add each lesson’s date, subject and topic. The “Quick add” buttons add the student’s usual subjects, and pressing Enter in a topic adds the next lesson.' },
+    { el: () => $('#slotList')?.closest('section'), title: 'Booked slots', text: 'The month’s lesson slots, filled in from the student’s weekly schedule. Use “Reschedule” if a lesson is moved.' },
+    { el: () => $('.summary'), title: 'Total', text: 'The total updates as you type.' },
+    { el: () => $('#previewWrap'), title: 'Live preview', text: 'This is exactly what the PDF will look like.' },
+    { el: () => $('#printBtn'), title: 'Save the PDF', text: () => api
+        ? 'Checks for common mistakes first, then saves the PDF in Documents › Tuition Invoices. Afterwards you can copy a ready-made WhatsApp message and mark the invoice as paid.'
+        : 'Checks for common mistakes first, then opens the print window, where you can choose “Save as PDF”.' },
+    { el: () => $('#moreOpts > summary'), title: 'More options', text: 'Rarely needed: invoice number, extra charge or discount, note, greeting line, and deleting the document.' },
+    { el: () => $('#backBtn'), title: 'Back', text: 'Returns to “This month”. You don’t need to save first.', last: 'Got it' },
+  ],
+};
+let tour = null;   // { name, steps, i }
+const tourVisible = el => { if (!el || !el.isConnected) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && el.offsetParent !== null; };
+function toursDone() { if (!S.prefs.toursDone || typeof S.prefs.toursDone !== 'object') S.prefs.toursDone = {}; return S.prefs.toursDone; }
+function startTour(name, force) {
+  if (tour || (!force && toursDone()[name])) return false;
+  closeEmoji?.();
+  const steps = TOURS[name].filter(s => (!s.el || tourVisible(s.el())) && (!s.when || s.when()));
+  if (!steps.length) return false;
+  tour = { name, steps, i: 0, prevFocus: document.activeElement };
+  $('#tour').hidden = false;
+  showTourStep();
+  return true;
+}
+function maybeTour(name) {
+  // after the screen has settled (the Smooth edition slides things in first)
+  setTimeout(function go() {
+    if (pdfBusy || !$('#modal').hidden) { setTimeout(go, 500); return; }   // wait until a PDF / dialog is finished
+    if (!tour && !toursDone()[name] && (name !== 'editor' || view === 'editor')) startTour(name);
+  }, 450);
+}
+function showTourStep() {
+  const s = tour.steps[tour.i], el = s.el && s.el();
+  $('#tourTitle').textContent = s.title;
+  $('#tourText').textContent = typeof s.text === 'function' ? s.text() : s.text;
+  const n = tour.steps.length, lastStep = tour.i === n - 1;
+  $('#tourDots').innerHTML = s.intro ? '' : tour.steps.map((_, k) => `<span class="${k === tour.i ? 'on' : ''}"></span>`).join('');
+  $('#tourDots').setAttribute('aria-label', `Step ${tour.i + 1} of ${n}`);
+  $('#tourBack').hidden = tour.i === 0 || !!s.intro || !!tour.steps[tour.i - 1]?.intro;
+  $('#tourNext').textContent = s.next || (lastStep ? (s.last || 'Done') : 'Next');
+  $('#tourSkip').textContent = s.intro ? 'No thanks' : 'Skip tour';
+  $('#tourSkip').hidden = lastStep;
+  // tall things (like the invoice preview) are left where they are, so the top of them stays in view
+  if (el) el.scrollIntoView({ block: el.getBoundingClientRect().height > (innerHeight || 800) * .75 ? 'nearest' : 'center', behavior: 'instant' });
+  placeTour();
+  $('#tourNext').focus({ preventScroll: true });
+}
+function placeTour() {
+  if (!tour) return;
+  const s = tour.steps[tour.i], el = s.el && s.el(), hole = $('#tourHole'), tip = $('#tourTip');
+  const W = innerWidth || document.documentElement.clientWidth, H = innerHeight || document.documentElement.clientHeight;
+  const tw = tip.offsetWidth, th = tip.offsetHeight, gap = 14;
+  if (!el || !tourVisible(el)) {           // no target: a card in the middle of a dimmed screen
+    hole.classList.add('center');
+    Object.assign(hole.style, { left: W / 2 + 'px', top: H / 2 + 'px' });
+    Object.assign(tip.style, { left: Math.max(12, (W - tw) / 2) + 'px', top: Math.max(12, (H - th) / 2) + 'px' });
+    return;
+  }
+  hole.classList.remove('center');
+  const r = el.getBoundingClientRect(), pad = 6;
+  const barBottom = el.closest('.topbar') ? 0 : ($('.topbar')?.getBoundingClientRect().bottom || 0);   // don't spotlight the sticky top bar by accident
+  const box = { left: Math.max(4, r.left - pad), top: Math.max(4, barBottom + 4, r.top - pad), right: Math.min(W - 4, r.right + pad), bottom: Math.min(H - 4, r.bottom + pad) };
+  Object.assign(hole.style, { left: box.left + 'px', top: box.top + 'px', width: box.right - box.left + 'px', height: box.bottom - box.top + 'px' });
+  // the card goes below the target, else above, else beside it, else over the bottom of the screen
+  const clampX = x => Math.max(12, Math.min(x, W - tw - 12)), clampY = y => Math.max(12, Math.min(y, H - th - 12));
+  let left, top;
+  if (box.bottom + gap + th <= H - 8) { top = box.bottom + gap; left = clampX(box.left); }
+  else if (box.top - gap - th >= 8) { top = box.top - gap - th; left = clampX(box.left); }
+  else if (box.right + gap + tw <= W - 8) { left = box.right + gap; top = clampY(box.top); }
+  else if (box.left - gap - tw >= 8) { left = box.left - gap - tw; top = clampY(box.top); }
+  else { left = clampX((W - tw) / 2); top = H - th - 16; }
+  Object.assign(tip.style, { left: left + 'px', top: top + 'px' });
+}
+function endTour(how) {
+  if (!tour) return;
+  const { name, steps, prevFocus } = tour;
+  toursDone()[name] = true;
+  if (how === 'skip' && steps[0]?.intro && tour.i === 0) Object.keys(TOURS).forEach(k => { toursDone()[k] = true; });   // "No thanks" = no tours at all
+  persist();
+  tour = null;
+  $('#tour').hidden = true;
+  if (name === 'home' && how === 'done' && !$('#welcome').hidden) $('#welcome input')?.focus();
+  else prevFocus?.focus?.({ preventScroll: true });
+}
+function tourMove(d) {
+  if (!tour) return;
+  const k = tour.i + d;
+  if (k >= tour.steps.length) { endTour('done'); return; }
+  if (k < 0) return;
+  tour.i = k; showTourStep();
+}
+$('#tourNext').onclick = () => tourMove(1);
+$('#tourBack').onclick = () => tourMove(-1);
+$('#tourSkip').onclick = () => endTour('skip');
+document.addEventListener('keydown', e => {
+  if (!tour) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endTour('skip'); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); tourMove(1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); tourMove(-1); }
+  else if (e.key === 'Tab') {             // keep keyboard focus inside the tour card
+    const f = [...$('#tourTip').querySelectorAll('button')].filter(b => !b.hidden);
+    const i = f.indexOf(document.activeElement);
+    e.preventDefault(); f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
+  }
+}, true);
+window.addEventListener('resize', placeTour);
+document.addEventListener('scroll', placeTour, true);
+$('#tourHomeBtn').onclick = () => { showView('home'); toursDone().home = false; setTimeout(() => startTour('home', true), 80); };
+$('#tourEditorBtn').onclick = async () => {
+  toursDone().editor = false; persist();
+  const d = S.draft || S.invoices[S.invoices.length - 1];
+  if (d) { openDoc(d); return; }   // openDoc starts the editor tour
+  notify('No invoice yet', 'The editor tour starts the first time you open an invoice. Create one from “This month” first.');
+};
+
 /* ---------- start ---------- */
 function init() {
   applyTheme(S.prefs); renderThemePicker();
   wizStep = 1;
   showView('home');
+  maybeTour('home');
 }
 async function boot() {
   // Only Chromium (Chrome, Edge, Electron, WebView2) prints CSS @page margin boxes.
