@@ -21,10 +21,15 @@
       // Test fixtures: three made-up students, one per billing style (the app itself starts with none)
       const fx = [
         { name: 'Student A', code: 'TSA', rate: 100, plan: 'end', filePrefix: 'Student A', fileLabel: 'Invoice', firstSeq: 1 },
-        { name: 'Student B', code: 'TSB', rate: 120, plan: 'start', filePrefix: 'Student B', fileLabel: 'Invoice', firstSeq: 1, schedule: [{ weekday: 4, time: '4-5pm' }], greeting: true, notes: 'Test note.' },
+        { name: 'Student B', code: 'TSB', rate: 120, plan: 'start', filePrefix: 'Student B', fileLabel: 'Invoice', firstSeq: 1, schedule: [{ weekday: 4, time: '4-5pm' }], greeting: true, notes: 'Test note. 📚✨' },
         { name: 'Student C', code: 'TSC', rate: 100, plan: 'startSummary', filePrefix: 'Student C', fileLabel: 'Invoice', summaryLabel: 'Lesson Summary', firstSummarySeq: 1 },
       ];
       for (const f of fx) if (!S.students.some(s => s.name === f.name)) S.students.push({ ...studentDefaults(), level: 'Test', bankId: S.tutor.banks[0].id, ...f });
+      // Emoji picker: insert into the closing message through the picker's own code path
+      const th = document.querySelector('#view-settings [data-bind="tutor.thanks"]');
+      th.value = 'Thank you very much'; th.dispatchEvent(new Event('input', { bubbles: true }));
+      th.setSelectionRange(th.value.length, th.value.length); emojiTarget = th; insertEmoji(' 🌸'.trim());
+      out.emoji = { thanks: S.tutor.thanks, buttons: document.querySelectorAll('.emoji-btn').length, recent: S.prefs.recentEmoji };
       persist();
       const ids = Object.fromEntries(S.students.map(s => [s.name, s.id]));
       const diag = [];

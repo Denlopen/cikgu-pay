@@ -234,6 +234,28 @@ body.desktop .browser-only { display:none !important; }
 .dialog ul { margin:8px 0; padding-left:20px; line-height:1.5; }
 .dialog .btns { justify-content:flex-end; margin-top:18px; }
 
+/* Emoji picker: a small 😊 button inside text fields, opening a popover */
+.emoji-wrap { position:relative; display:block; }
+.inline .emoji-wrap { flex:1; }
+.emoji-wrap > input { padding-right:40px; }
+.emoji-wrap > textarea { padding-right:40px; }
+.emoji-btn { position:absolute; right:5px; top:5px; width:30px; height:28px; min-height:0; padding:0; border:none; background:transparent;
+  font-size:17px; line-height:1; border-radius:6px; opacity:.75; }
+.emoji-btn:hover, .emoji-btn[aria-expanded="true"] { opacity:1; background:var(--surface-hover); }
+.emoji-pop { position:fixed; z-index:50; width:332px; background:var(--surface); color:var(--text); border:1px solid var(--border-soft);
+  border-radius:12px; box-shadow:0 12px 36px rgba(0,0,0,.28); padding:10px; }
+.emoji-pop input { min-height:34px; font-size:14px; }
+.emoji-cats { display:flex; gap:2px; margin:8px 0 4px; }
+.emoji-cats button { flex:1; min-height:32px; padding:0; border:none; background:transparent; font-size:17px; border-radius:6px; opacity:.6; }
+.emoji-cats button.on { opacity:1; background:var(--accent-soft); }
+.emoji-cats button:hover { opacity:1; }
+.emoji-title { font-size:12px; color:var(--muted); margin:6px 2px 2px; }
+.emoji-grid { display:grid; grid-template-columns:repeat(8, 1fr); gap:2px; height:208px; overflow-y:auto; align-content:start; }
+.emoji-grid button { min-height:0; height:36px; padding:0; border:none; background:transparent; font-size:21px; border-radius:6px;
+  font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif; }
+.emoji-grid button:hover, .emoji-grid button:focus-visible { background:var(--surface-hover); outline:none; }
+.emoji-empty { grid-column:1 / -1; color:var(--faint); font-size:13px; padding:10px 4px; }
+
 /* ---------- The document paper (copies her Word layouts) ---------- */
 .paper { background:#fff; width:210mm; min-height:297mm; padding:10mm 20mm 22mm; margin:0 auto; box-shadow:var(--paper-shadow);
   font-family: Arial, "Liberation Sans", Helvetica, sans-serif; font-size:10.5pt; line-height:1.18; color:#000; position:relative; }
@@ -261,7 +283,7 @@ body.desktop .browser-only { display:none !important; }
   @page { size:A4; margin:17mm 20mm; }
   html { color-scheme:light !important; background:#fff !important; }
   body { background:#fff !important; color:#000; }
-  .topbar, .editor, .previewBar, .toast, .modal, .view:not(#view-editor) { display:none !important; }
+  .topbar, .editor, .previewBar, .toast, .modal, .emoji-pop, .view:not(#view-editor) { display:none !important; }
   .app, #view-editor { display:block !important; padding:0; }
   .previewWrap { overflow:visible; }
   .paper { box-shadow:none; width:auto; min-height:0; padding:0; margin:0; zoom:1 !important; }
@@ -388,7 +410,7 @@ body.desktop .browser-only { display:none !important; }
         <div><label>Email</label><input data-bind="tutor.email" placeholder="you@example.com"></div>
       </div>
       <label>Closing message</label>
-      <input data-bind="tutor.thanks" placeholder="Thank you very much ☺☺">
+      <input data-emoji data-bind="tutor.thanks" placeholder="Thank you very much ☺☺">
     </div></div>
 
     <div class="card"><div class="body">
@@ -426,8 +448,8 @@ body.desktop .browser-only { display:none !important; }
       <div class="cardtitle">WhatsApp message</div>
       <div class="hint">Used by “Copy WhatsApp message” after saving a PDF. Words in {curly brackets} are filled in for you:
         <code>{student}</code> <code>{month}</code> <code>{invoice}</code> <code>{total}</code> <code>{sessions}</code> <code>{bank}</code> <code>{account}</code> <code>{accountName}</code> <code>{thanks}</code></div>
-      <label>For invoices</label><textarea rows="5" data-bind="prefs.waInvoice"></textarea>
-      <label>For lesson summaries</label><textarea rows="3" data-bind="prefs.waSummary"></textarea>
+      <label>For invoices</label><textarea rows="5" data-emoji data-bind="prefs.waInvoice"></textarea>
+      <label>For lesson summaries</label><textarea rows="3" data-emoji data-bind="prefs.waSummary"></textarea>
     </div></div>
 
     <div class="card"><div class="body">
@@ -535,9 +557,9 @@ body.desktop .browser-only { display:none !important; }
         </section>
 
         <h3>Note</h3>
-        <textarea rows="3" data-bind="draft.notes" placeholder="Leave a blank line between paragraphs"></textarea>
+        <textarea rows="3" data-emoji data-bind="draft.notes" placeholder="Leave a blank line between paragraphs"></textarea>
         <label>Greeting line</label>
-        <div class="inline"><input data-bind="draft.greeting" placeholder="Wishing you …"><button class="small" id="greetBtn">Suggest</button></div>
+        <div class="inline"><input data-emoji data-bind="draft.greeting" placeholder="Wishing you …"><button class="small" id="greetBtn">Suggest</button></div>
 
         <div class="btns"><button class="danger" id="deleteDocBtn">🗑 Delete this document</button></div>
       </details>
@@ -550,6 +572,12 @@ body.desktop .browser-only { display:none !important; }
   </div>
 </section>
 
+<div class="emoji-pop" id="emojiPop" hidden role="dialog" aria-label="Pick an emoji">
+  <input id="emojiSearch" type="search" placeholder="Search emoji (e.g. heart, book, star)" autocomplete="off">
+  <div class="emoji-cats" id="emojiCats"></div>
+  <div class="emoji-title" id="emojiTitle"></div>
+  <div class="emoji-grid" id="emojiGrid"></div>
+</div>
 <div class="toast" id="toast" role="status"></div>
 <div class="modal" id="modal" hidden><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
   <h3 id="dlgTitle"></h3><div id="dlgBody"></div><div class="btns" id="dlgBtns"></div>
@@ -1206,7 +1234,7 @@ function renderStudents() {
         <div class="btns"><button class="small" data-act="addSched">＋ Add weekly time</button></div>
       </div>
       <label>Default note on invoices</label>
-      <textarea rows="2" data-f="notes" placeholder="Optional">${esc(s.notes)}</textarea>
+      <textarea rows="2" data-emoji data-f="notes" placeholder="Optional">${esc(s.notes)}</textarea>
       <label class="check"><input type="checkbox" data-f="greeting" ${s.greeting ? 'checked' : ''}> Add a monthly greeting line</label>
       <div class="btns"><button class="small danger" data-act="del">Remove student</button></div>
     </details>`).join('') || '<div class="hint">No students yet.</div>';
@@ -1657,6 +1685,114 @@ $('#importFile').onchange = async e => {
   e.target.value = '';
 };
 $('#folderBtn').onclick = () => api && api.openFolder();
+
+/* ---------- emoji picker ----------
+   Fields marked data-emoji get a 😊 button. The picked emoji is typed in at the cursor through a normal
+   "input" event, so it is saved and shown in the preview like any other typing. Works offline (no images). */
+const EMOJI = [
+  ['Smileys', '😊', 'smile happy:😊 grin:😁 laugh joy:😂 smiling:🙂 wink:😉 blush:☺️ love heart eyes:😍 star struck:🤩 hug:🤗 relieved:😌 cool sunglasses:😎 think thinking:🤔 nerd study:🤓 party:🥳 pray thanks please:🙏 sweat phew:😅 rofl:🤣 innocent angel:😇 kiss:😘 yum:😋 sleepy:😴 sad:😢 shocked wow:😮 clap:👏 wave hello:👋 ok:👌 thumbs up like:👍 muscle strong:💪 raise hands:🙌 point:👉 writing:✍️'],
+  ['Hearts', '❤️', 'red heart love:❤️ orange heart:🧡 yellow heart:💛 green heart:💚 blue heart:💙 purple heart:💜 white heart:🤍 pink heart:🩷 sparkling heart:💖 two hearts:💕 heart ribbon gift:💝 growing heart:💗 heart hands:🫶 smile heart:🥰 rose flower:🌹 bouquet flowers:💐'],
+  ['School', '📚', 'books study:📚 book read:📖 notebook:📓 pencil:✏️ pen:🖊️ memo note:📝 graduation cap:🎓 school:🏫 calculator math:🧮 ruler:📏 triangle ruler:📐 microscope biology:🔬 test tube chemistry:🧪 dna:🧬 atom physics science:⚛️ globe geography:🌍 telescope:🔭 laptop computer online:💻 calendar date:📅 clock time:⏰ hourglass:⏳ bulb idea:💡 brain:🧠 check done:✅ tick:✔️ 100 perfect:💯 star:⭐ glowing star:🌟 trophy:🏆 medal:🥇 target goal:🎯 rocket:🚀 chart progress:📈 pushpin:📌 paperclip:📎'],
+  ['Money', '💰', 'money bag:💰 cash dollar:💵 card credit:💳 bank:🏦 receipt invoice:🧾 coin:🪙 chart:📊 envelope mail:✉️ email:📧 phone call:📞 mobile:📱 bell reminder:🔔 megaphone announce:📢 warning:⚠️ info:ℹ️ handshake deal:🤝'],
+  ['Celebrate', '🎉', 'party tada celebrate:🎉 confetti:🎊 balloon:🎈 gift present:🎁 cake birthday:🎂 sparkles:✨ fireworks:🎆 sparkler:🎇 ribbon:🎀 crown:👑 clinking:🥂 lantern:🏮 moon crescent raya ramadan:🌙 mosque:🕌 diya deepavali:🪔 red envelope angpow:🧧 christmas tree:🎄 santa:🎅 snowman:⛄ pumpkin:🎃'],
+  ['Nature', '🌸', 'cherry blossom:🌸 hibiscus:🌺 sunflower:🌻 tulip:🌷 blossom:🌼 seedling grow:🌱 leaf:🍃 maple autumn:🍁 palm tree:🌴 tree:🌳 sun sunny:☀️ sun cloud:🌤️ rainbow:🌈 rain:🌧️ umbrella:☂️ snowflake:❄️ wave beach:🌊 star night:🌠 butterfly:🦋 bee:🐝 cat:🐱 dog:🐶 coffee:☕ tea:🍵 apple:🍎 ice cream:🍦'],
+].map(([name, icon, list]) => ({ name, icon, items: [...list.matchAll(/([^:]+):(\S+)/g)].map(m => ({ k: m[1].trim(), e: m[2] })) }));
+let emojiTarget = null, emojiBtn = null, emojiCat = 0;
+function attachEmoji(root = document) {
+  root.querySelectorAll('[data-emoji]').forEach(el => {
+    if (el.parentElement.classList.contains('emoji-wrap')) return;
+    const wrap = document.createElement('span'); wrap.className = 'emoji-wrap';
+    el.parentNode.insertBefore(wrap, el); wrap.appendChild(el);
+    const b = document.createElement('button');
+    Object.assign(b, { type: 'button', className: 'emoji-btn', textContent: '😊', title: 'Insert emoji' });
+    b.setAttribute('aria-label', 'Insert emoji'); b.setAttribute('aria-expanded', 'false');
+    wrap.appendChild(b);
+  });
+}
+function recentEmoji() { return Array.isArray(S.prefs.recentEmoji) ? S.prefs.recentEmoji : []; }
+function renderEmojiGrid() {
+  const q = $('#emojiSearch').value.trim().toLowerCase();
+  let list, title;
+  if (q) {
+    const seen = new Set();
+    list = EMOJI.flatMap(c => c.items).filter(x => x.k.includes(q) && !seen.has(x.e) && seen.add(x.e)).map(x => x.e);
+    title = `Results for “${q}”`;
+  } else if (emojiCat === -1) { list = recentEmoji(); title = 'Recently used'; }
+  else { list = EMOJI[emojiCat].items.map(x => x.e); title = EMOJI[emojiCat].name; }
+  $('#emojiTitle').textContent = title;
+  $('#emojiCats').innerHTML = [`<button data-cat="-1" class="${!q && emojiCat === -1 ? 'on' : ''}" title="Recently used" aria-label="Recently used">🕘</button>`]
+    .concat(EMOJI.map((c, i) => `<button data-cat="${i}" class="${!q && emojiCat === i ? 'on' : ''}" title="${c.name}" aria-label="${c.name}">${c.icon}</button>`)).join('');
+  const names = Object.fromEntries(EMOJI.flatMap(c => c.items).map(x => [x.e, x.k.split(' ')[0]]));
+  $('#emojiGrid').innerHTML = list.map(e => `<button data-e="${e}" title="${esc(names[e] || '')}">${e}</button>`).join('')
+    || `<div class="emoji-empty">${q ? 'No emoji found.' : 'Emoji you pick will show up here.'}</div>`;
+}
+function openEmoji(btn) {
+  const pop = $('#emojiPop');
+  if (!pop.hidden && emojiTarget === btn.previousElementSibling) { closeEmoji(); return; }
+  closeEmoji();
+  emojiTarget = btn.previousElementSibling; emojiBtn = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  $('#emojiSearch').value = '';
+  emojiCat = recentEmoji().length ? -1 : 0;
+  renderEmojiGrid();
+  pop.hidden = false;
+  placeEmoji();
+  $('#emojiSearch').focus({ preventScroll: true });
+}
+// Keep the popover next to its button (also while the page scrolls); close it if the button scrolls out of view.
+function placeEmoji() {
+  const pop = $('#emojiPop');
+  if (pop.hidden || !emojiBtn) return;
+  const r = emojiBtn.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  if (!emojiBtn.isConnected || r.bottom < 0 || r.top > innerHeight) { closeEmoji(); return; }
+  const left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8));
+  const top = r.bottom + 6 + h <= innerHeight - 8 ? r.bottom + 6 : Math.max(8, r.top - h - 6);
+  Object.assign(pop.style, { left: left + 'px', top: top + 'px' });
+}
+function closeEmoji() {
+  $('#emojiPop').hidden = true;
+  document.querySelectorAll('.emoji-btn[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+}
+function insertEmoji(e) {
+  const el = emojiTarget; if (!el) return;
+  const start = el.selectionStart ?? el.value.length, end = el.selectionEnd ?? el.value.length;
+  el.focus();
+  const before = el.value.slice(0, start);
+  if (/[\p{L}\p{N}.,!?]$/u.test(before)) e = ' ' + e;   // "Thank you" + 🌸 → "Thank you 🌸"
+  el.setRangeText(e, start, end, 'end');
+  el.dispatchEvent(new Event('input', { bubbles: true }));   // saves + updates the preview
+  e = e.trim();
+  S.prefs.recentEmoji = [e, ...recentEmoji().filter(x => x !== e)].slice(0, 24);
+  persist();
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.emoji-btn');
+  if (btn) { e.preventDefault(); openEmoji(btn); return; }
+  if (!$('#emojiPop').hidden && !e.target.closest('#emojiPop')) closeEmoji();
+});
+$('#emojiPop').addEventListener('click', e => {
+  const c = e.target.closest('[data-cat]');
+  if (c) { emojiCat = +c.dataset.cat; $('#emojiSearch').value = ''; renderEmojiGrid(); return; }
+  const b = e.target.closest('[data-e]');
+  if (b) { insertEmoji(b.dataset.e); if (!e.shiftKey) closeEmoji(); }   // Shift-click adds several
+});
+$('#emojiSearch').addEventListener('input', renderEmojiGrid);
+$('#emojiSearch').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { const first = $('#emojiGrid [data-e]'); if (first) { e.preventDefault(); insertEmoji(first.dataset.e); closeEmoji(); } }
+  if (e.key === 'ArrowDown') { e.preventDefault(); $('#emojiGrid [data-e]')?.focus(); }
+});
+$('#emojiGrid').addEventListener('keydown', e => {
+  const items = [...$('#emojiGrid').querySelectorAll('[data-e]')], i = items.indexOf(document.activeElement);
+  const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 8, ArrowUp: -8 }[e.key];
+  if (step && i >= 0) { e.preventDefault(); (items[i + step] || (step < 0 && $('#emojiSearch')))?.focus(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#emojiPop').hidden) { e.stopPropagation(); const t = emojiTarget; closeEmoji(); t?.focus(); }
+}, true);
+window.addEventListener('resize', placeEmoji);
+document.addEventListener('scroll', placeEmoji, true);
+attachEmoji();
+new MutationObserver(() => attachEmoji($('#studentList'))).observe($('#studentList'), { childList: true });
 
 /* ---------- start ---------- */
 function init() {

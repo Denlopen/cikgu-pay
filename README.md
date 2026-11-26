@@ -11,6 +11,7 @@ A small desktop app for private tutors. It makes monthly invoices and lesson sum
   - start-of-month invoice, plus a separate lesson summary at the end of the month
 - A live A4 preview that matches the PDF exactly. Automatic week numbers, totals, invoice numbers and "last payment received" lines.
 - Checks before saving (RM 0 price, empty account number, lessons without a date or topic), Undo for deletions, and a ready-to-paste WhatsApp message.
+- Emoji picker (😊 button) in the closing message, note, greeting and WhatsApp message fields. Search it, or browse 6 categories and your recently used emoji. Works offline.
 - Everything saves automatically, with a daily backup of the last 30 days. Colour themes include Classic and Catppuccin Latte / Frappé / Macchiato / Mocha.
 
 The app starts empty: a short setup asks for your details, bank account and students. No student data is included.
