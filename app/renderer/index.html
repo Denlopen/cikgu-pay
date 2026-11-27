@@ -303,6 +303,19 @@ body.desktop .browser-only { display:none !important; }
 .paper .greeting { text-align:center; font-family:"Segoe Script", "Lucida Handwriting", "Brush Script MT", cursive; font-style:italic; font-weight:bold; font-size:10.5pt; }
 .paper .pfooter { position:absolute; left:20mm; right:20mm; bottom:12mm; display:flex; justify-content:space-between; gap:12px; }
 .paper .empty { color:#999; font-style:italic; }
+.paper .kid { break-inside:avoid; }          /* a child's section (or the sum box) is never split across pages */
+.paper .kid + .kid { margin-top:16pt; }
+/* siblings on one invoice: child picker in the editor, family boxes in Settings */
+.kidtabs { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 2px; }
+.kidtabs .hint { flex-basis:100%; margin:0; }
+.kidtab { display:flex; flex-direction:column; align-items:flex-start; gap:1px; min-height:50px; padding:6px 14px; text-align:left; }
+.kidtab small { font-weight:400; color:var(--muted); font-size:12.5px; }
+.kidtab.on { border-color:var(--accent); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent); }
+.fam-kids { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.fam-kids select { width:auto; min-width:190px; }
+.kidchip { display:inline-flex; align-items:center; gap:6px; padding:4px 4px 4px 12px; border-radius:999px; background:var(--accent-soft); font-weight:600; }
+.kidchip small { font-weight:400; color:var(--muted); }
+.kidchip .x { min-height:26px; min-width:26px; padding:0; border-radius:999px; }
 
 @media print {
   @page { size:A4; margin:17mm 20mm; }
@@ -455,6 +468,13 @@ body.desktop .browser-only { display:none !important; }
       <div class="btns"><button id="addStudent">＋ Add student</button></div>
     </div></div>
 
+    <div class="card" id="familyCard"><div class="body">
+      <div class="cardtitle">Siblings paid together</div>
+      <div class="hint">If parents pay for brothers and sisters together, link them here. They get <b>one invoice</b> each month: a section for each child, then the total to pay at the end.</div>
+      <div id="familyList"></div>
+      <div class="btns"><button id="addFamily">＋ Link siblings</button></div>
+    </div></div>
+
     <div class="card"><div class="body">
       <div class="cardtitle">Appearance</div>
       <label>Colour theme</label>
@@ -525,11 +545,12 @@ body.desktop .browser-only { display:none !important; }
     <div class="card" id="docCard"><div class="body">
       <div class="row">
         <div><label>Month</label><input type="month" data-bind="draft.month"></div>
-        <div data-show="end start"><label>Price per session (RM)</label><input type="number" min="0" step="any" data-bind="draft.rate"></div>
+        <div data-show="end start"><label id="rateLabel">Price per session (RM)</label><input type="number" min="0" step="any" data-bind="draft.rate"></div>
       </div>
+      <div class="kidtabs" id="kidTabs" hidden></div>
 
       <section data-show="start">
-        <h3>Booked slots</h3>
+        <h3 id="slotsTitle">Booked slots</h3>
         <div id="slotList"></div>
         <div class="btns">
           <button id="addSlot">＋ Add slot</button>
@@ -539,7 +560,7 @@ body.desktop .browser-only { display:none !important; }
       </section>
 
       <section data-show="end summary">
-        <h3>Lessons</h3>
+        <h3 id="lessonsTitle">Lessons</h3>
         <div id="lessonList"></div>
         <div class="quick" id="quickAdd"></div>
         <div class="btns">
@@ -694,6 +715,19 @@ const lessonDefaults = () => ({ date:'', subject:'', topic:'', sessions:1, more:
 const slotDefaults = () => ({ date:'', time:'', sessions:1, movedDate:'', movedTime:'' });
 const prefDefaults = () => ({ theme:'classic', accent:'mauve', setupDone:false, waInvoice:WA_DEFAULT.invoice, waSummary:WA_DEFAULT.summary });
 
+// A combined invoice for siblings keeps each child's lessons/slots/price in d.parts. The editor works on one
+// child at a time: d.lessons, d.slots and d.rate point at the chosen child's part (not saved; d._p says which).
+function famDoc(d) {
+  if (!Array.isArray(d.parts) || !d.parts.length) { delete d.parts; return d; }
+  Object.defineProperty(d, '_p', { value: 0, writable: true, enumerable: false, configurable: true });
+  for (const k of ['lessons', 'slots', 'rate']) {
+    delete d[k];
+    Object.defineProperty(d, k, { enumerable: false, configurable: true,
+      get() { return this.parts[Math.min(this._p || 0, this.parts.length - 1)][k]; },
+      set(v) { this.parts[Math.min(this._p || 0, this.parts.length - 1)][k] = v; } });
+  }
+  return d;
+}
 function defaults() {
   return normalize({
     schema: 3,
@@ -701,6 +735,7 @@ function defaults() {
     tutor: { name:'', phone:'', email:'', thanks:'Thank you very much ☺☺',
       banks: [ { id:'b1', bank:'', accNo:'', accName:'' } ] },
     students: [],
+    families: [],        // siblings paid together: [{ id, code, filePrefix, members:[studentId…] }]
     invoices: [],
     draft: null,
   });
@@ -717,11 +752,16 @@ function normalize(s) {
       filePrefix:st.name, fileLabel:t.fileLabel || 'Invoice' }));
     s.schema = 2;
   }
-  const fixDoc = d => ({ ...docDefaults(), ...d,
-    lessons: (d.lessons || []).map(l => ({ ...lessonDefaults(), ...l, more: l.more || [] })),
-    slots: (d.slots || []).map(x => ({ ...slotDefaults(), ...x })) });
+  const fixLessons = ls => (ls || []).map(l => ({ ...lessonDefaults(), ...l, more: l.more || [] }));
+  const fixSlots = xs => (xs || []).map(x => ({ ...slotDefaults(), ...x }));
+  const fixDoc = d => famDoc({ ...docDefaults(), ...d, lessons: fixLessons(d.lessons), slots: fixSlots(d.slots),
+    parts: Array.isArray(d.parts) && d.parts.length
+      ? d.parts.map(p => ({ studentId:'', rate:0, ...p, lessons: fixLessons(p.lessons), slots: fixSlots(p.slots) })) : undefined });
   s.tutor = { name:'', phone:'', email:'', thanks:'', ...s.tutor, banks: s.tutor.banks || [] };
   s.students = (s.students || []).map(st => ({ ...studentDefaults(), ...st, schedule: st.schedule || [] }));
+  const taken = new Set();   // a child is in at most one family; removed students drop out
+  s.families = (Array.isArray(s.families) ? s.families : []).map(f => ({ code:'', filePrefix:'', ...f, id: f.id || uid(),
+    members: (f.members || []).filter(id => s.students.some(st => st.id === id) && !taken.has(id) && taken.add(id)) }));
   s.invoices = Array.isArray(s.invoices) ? s.invoices.map(fixDoc) : [];
   s.draft = s.draft ? fixDoc(s.draft) : null;
   if (s.schema < 3) {                                    // 1.2 → 1.3: documents have a status; no separate "history"
@@ -778,23 +818,65 @@ function prevMonth(ym) { let [y,m] = ym.split('-').map(Number); m--; if (m < 1) 
 function thisMonth() { return todayISO().slice(0, 7); }
 function lastDay(ym) { const [y,m] = ym.split('-').map(Number); return toISO(new Date(y, m, 0)); }
 function student(id) { return S.students.find(s => s.id === id) || studentDefaults(); }
+/* ---- siblings paid together ---- */
+// A document belongs to an "owner": one student, or a family of siblings whose parents pay together.
+function partsOf(d) { return d.parts && d.parts.length ? d.parts : [d]; }   // a normal document is its own single part
+function partIdx(d) { return d.parts ? Math.min(d._p || 0, d.parts.length - 1) : 0; }
+function activeSid(d) { return d.parts ? d.parts[partIdx(d)].studentId : d.studentId; }
+function family(id) { return (S.families || []).find(f => f.id === id); }
+function famMembers(f) { return (f?.members || []).map(id => S.students.find(s => s.id === id)).filter(Boolean); }
+function familyOf(sid) { return (S.families || []).find(f => f.members.includes(sid)); }
+const liveFamily = f => !!f && famMembers(f).length >= 2;
+const joinNames = l => l.length <= 2 ? l.join(' & ') : l.slice(0, -1).join(', ') + ' & ' + l[l.length - 1];
+function famCode(f, m) { return (f?.code || '').trim() || m.map(s => (s.code || '').trim()).join(''); }
+function famPrefix(f, m) { return (f?.filePrefix || '').trim() || m.map(s => (s.filePrefix || s.name || '').trim()).filter(Boolean).join('_'); }
+function whoOf(d) { return d.parts ? joinNames(d.parts.map(p => student(p.studentId).name)) : student(d.studentId).name; }
+function ownerOf(d) { return d.familyId || d.studentId; }
+const ownedBy = (d, id) => ownerOf(d) === id;
+const docHas = (d, sid) => partsOf(d).some(p => p.studentId === sid);
+// The student, or for a family: the first child's settings (billing, bank, labels) with the family's name/code/PDF name
+function ownerInfo(id) {
+  const f = family(id);
+  if (!f) return student(id);
+  const m = famMembers(f);
+  return { ...(m[0] || studentDefaults()), id: f.id, isFamily: true, family: f, members: m, name: joinNames(m.map(s => s.name)),
+    level: '', code: famCode(f, m), filePrefix: famPrefix(f, m) };
+}
+function docOwner(d) {
+  if (!d.parts) return student(d.studentId);
+  const m = d.parts.map(p => student(p.studentId));
+  return { ...m[0], isFamily: true, name: whoOf(d), level: '', code: famCode(family(d.familyId), m), filePrefix: famPrefix(family(d.familyId), m) };
+}
+// Who gets a line on "This month": every student, except linked siblings, who get one line together
+function billingOwners() {
+  const out = [], seen = new Set();
+  for (const st of S.students) {
+    if (seen.has(st.id)) continue;
+    const f = familyOf(st.id);
+    if (liveFamily(f)) { famMembers(f).forEach(m => seen.add(m.id)); out.push(ownerInfo(f.id)); }
+    else out.push(st);
+  }
+  return out;
+}
 function bankById(id) { return S.tutor.banks.find(b => b.id === id) || S.tutor.banks[0] || {}; }
 function bankOf(st) { return bankById(st.bankId); }
 // The account printed on a document: its own choice (More options) if set, else the student's usual one
 function docBank(d) { return bankById(d.bankId && S.tutor.banks.some(b => b.id === d.bankId) ? d.bankId : student(d.studentId).bankId); }
 function bankLabel(b) { return b && (b.bank || b.accNo) ? `${b.bank || 'Bank'}${b.accNo ? ' – ' + b.accNo : ''}` : '(no account yet)'; }
 const isInvoice = d => KINDS[d.kind] ? KINDS[d.kind].invoice : true;
-function autoNo(d) { return `${mmyyyy(d.month)}/${student(d.studentId).code || ''}`; }
+function autoNo(d) { return `${mmyyyy(d.month)}/${docOwner(d).code || ''}`; }
 function invNo(d) { return (d.invNo || '').trim() || autoNo(d); }
-function sessionsOf(d) {
-  const list = d.kind === 'start' ? d.slots : d.lessons;
-  return list.filter(x => x.date).reduce((a, x) => a + (Number(x.sessions) || 0), 0);
+function partSessions(d, p) {
+  return ((d.kind === 'start' ? p.slots : p.lessons) || []).filter(x => x.date).reduce((a, x) => a + (Number(x.sessions) || 0), 0);
 }
+function sessionsOf(d) { return partsOf(d).reduce((a, p) => a + partSessions(d, p), 0); }
 function totals(d) {
-  const sessions = sessionsOf(d), fee = sessions * (Number(d.rate) || 0), adj = Number(d.adjAmount) || 0;
-  return { sessions, fee, adj, grand: fee + adj };
+  const parts = partsOf(d).map(p => { const sessions = partSessions(d, p), rate = Number(p.rate) || 0;
+    return { p, st: student(p.studentId), sessions, rate, fee: sessions * rate }; });
+  const sessions = parts.reduce((a, x) => a + x.sessions, 0), fee = parts.reduce((a, x) => a + x.fee, 0), adj = Number(d.adjAmount) || 0;
+  return { sessions, fee, adj, grand: fee + adj, parts };
 }
-function hasContent(d) { return d.lessons.some(l => l.date || l.topic) || d.slots.some(s => s.date); }
+function hasContent(d) { return partsOf(d).some(p => (p.lessons || []).some(l => l.date || l.topic) || (p.slots || []).some(s => s.date)); }
 
 // Status shown everywhere: draft → sent → paid
 function docStatus(d) {
@@ -858,14 +940,19 @@ function refresh() {
 }
 
 /* ---------- making documents ---------- */
-function docsOf(sid, summary) { return S.invoices.filter(i => i.studentId === sid && (summary ? i.kind === 'summary' : isInvoice(i))); }
+// "sid" below is an owner id: a student, or a family of siblings paid together
+function docsOf(sid, summary) { return S.invoices.filter(i => ownedBy(i, sid) && (summary ? i.kind === 'summary' : isInvoice(i))); }
 function findDoc(sid, kind, month) {
-  return S.invoices.find(d => d.studentId === sid && d.month === month && (kind === 'summary' ? d.kind === 'summary' : isInvoice(d)));
+  return S.invoices.find(d => ownedBy(d, sid) && d.month === month && (kind === 'summary' ? d.kind === 'summary' : isInvoice(d)));
 }
 function nextSeq(sid, kind) {
-  const st = student(sid), fam = docsOf(sid, kind === 'summary');
-  const max = Math.max(0, ...fam.map(d => Number(d.seq) || 0));
-  return max ? max + 1 : (kind === 'summary' ? st.firstSummarySeq : st.firstSeq) || 1;
+  const mine = docsOf(sid, kind === 'summary');
+  const max = Math.max(0, ...mine.map(d => Number(d.seq) || 0));
+  if (max) return max + 1;
+  const f = family(sid);   // a family's first invoice carries on from the children's own numbering
+  if (f) return Math.max(1, ...famMembers(f).map(s => nextSeq(s.id, kind)));
+  const st = student(sid);
+  return (kind === 'summary' ? st.firstSummarySeq : st.firstSeq) || 1;
 }
 function suggestMonth(sid, kind) {
   const fam = docsOf(sid, kind === 'summary').sort((a, b) => b.month.localeCompare(a.month));
@@ -882,47 +969,57 @@ function slotsFromSchedule(st, month) {
   return out;
 }
 function lastPaid(sid, beforeMonth) {
-  return S.invoices.filter(i => i.studentId === sid && isInvoice(i) && i.paid && i.paidDate && (!beforeMonth || i.month < beforeMonth))
+  return S.invoices.filter(i => ownedBy(i, sid) && isInvoice(i) && i.paid && i.paidDate && (!beforeMonth || i.month < beforeMonth))
     .sort((a, b) => b.month.localeCompare(a.month))[0];
 }
 function fillLastPayment(d) {
-  const p = lastPaid(d.studentId, d.month);
+  const p = lastPaid(ownerOf(d), d.month);
   d.lastPayDate = p ? p.paidDate : ''; d.lastPayRef = p ? invNo(p) : '';
 }
-function monthInvoice(sid, month) { return S.invoices.find(i => i.studentId === sid && i.month === month && isInvoice(i)); }
+function monthInvoice(sid, month) { return S.invoices.find(i => ownedBy(i, sid) && i.month === month && isInvoice(i)); }
 function linkPayment(d) {
-  const inv = monthInvoice(d.studentId, d.month);
+  const inv = monthInvoice(ownerOf(d), d.month);
   if (inv && inv.paid) { d.payStatus = 'PAID'; d.payDate = inv.paidDate; d.payRef = invNo(inv); }
   else { d.payStatus = inv ? 'UNPAID' : ''; d.payDate = ''; d.payRef = inv ? invNo(inv) : ''; }
 }
 function blankDoc(sid, kind, month) {
-  const st = student(sid);
-  return { ...docDefaults(), kind, studentId: sid, month, seq: nextSeq(sid, kind), rate: st.rate,
+  const st = ownerInfo(sid);
+  const d = { ...docDefaults(), kind, studentId: st.isFamily ? (st.members[0]?.id || '') : sid, month, seq: nextSeq(sid, kind), rate: st.rate,
     notes: kind === 'summary' ? '' : (st.notes || ''), greeting: st.greeting && kind !== 'summary' ? GREETINGS[Number(month.slice(5)) - 1] : '' };
+  if (st.isFamily) {   // one part per child, each with their own price
+    d.familyId = sid;
+    d.parts = st.members.map(m => ({ studentId: m.id, rate: m.rate, lessons: [], slots: [] }));
+    famDoc(d);
+  }
+  return d;
 }
 function lessonsFromSlots(inv) {
   return inv.slots.filter(s => s.date).sort((a, b) => (a.movedDate || a.date).localeCompare(b.movedDate || b.date))
     .map(s => ({ ...lessonDefaults(), date: s.movedDate || s.date, sessions: s.sessions || 1 }));
 }
 function makeSummary(inv) {
-  const d = blankDoc(inv.studentId, 'summary', inv.month);
+  const d = blankDoc(ownerOf(inv), 'summary', inv.month);
   d.invNo = invNo(inv);
-  d.lessons = lessonsFromSlots(inv);
+  if (inv.parts) {   // same children as the invoice it follows
+    d.familyId = inv.familyId; d.studentId = inv.studentId;
+    d.parts = inv.parts.map(p => ({ studentId: p.studentId, rate: p.rate, lessons: lessonsFromSlots(p), slots: [] }));
+    famDoc(d);
+  } else d.lessons = lessonsFromSlots(inv);
   linkPayment(d);
   return d;
 }
-const summaryExists = (sid, month) => S.invoices.some(i => i.kind === 'summary' && i.studentId === sid && i.month === month);
+const summaryExists = (sid, month) => S.invoices.some(i => i.kind === 'summary' && ownedBy(i, sid) && i.month === month);
 // Create a document, add it to the list straight away, and open it.
 function createDoc(sid, kind, month) {
-  const st = student(sid);
+  const st = ownerInfo(sid);
   let d;
   if (kind === 'summary') {
-    const inv = S.invoices.find(i => i.studentId === sid && i.month === month && i.kind === 'start');
+    const inv = S.invoices.find(i => ownedBy(i, sid) && i.month === month && i.kind === 'start');
     d = inv ? makeSummary(inv) : blankDoc(sid, 'summary', month);
     if (!inv) linkPayment(d);
   } else {
     d = blankDoc(sid, kind, month);
-    if (kind === 'start') d.slots = slotsFromSchedule(st, month);
+    if (kind === 'start') for (const p of partsOf(d)) p.slots = slotsFromSchedule(student(p.studentId), month);
     if (kind === 'end') fillLastPayment(d);
   }
   S.invoices.push(d);
@@ -933,10 +1030,10 @@ function createDoc(sid, kind, month) {
 }
 // Kept for older code/tests: next document for a student, month chosen automatically
 function newDocument(sid, kind) {
-  kind = kind || (PLANS[student(sid).plan] || PLANS.end).kind;
+  kind = kind || (PLANS[ownerInfo(sid).plan] || PLANS.end).kind;
   return createDoc(sid, kind, suggestMonth(sid, kind));
 }
-function openDoc(d) { S.draft = d; hidePdfResult(); showView('editor'); maybeTour('editor'); }
+function openDoc(d) { S.draft = d; if (d.parts) d._p = 0; hidePdfResult(); showView('editor'); maybeTour('editor'); }
 // Older versions had a separate "Save to history"; now every document is always in the list.
 function saveDraft() { if (S.draft && !S.invoices.includes(S.draft)) S.invoices.push(S.draft); persist(); }
 function markSent(d) {
@@ -951,7 +1048,7 @@ function markSent(d) {
 function homeTasks() {
   const ym = thisMonth(), day = now().getDate(), out = [];
   const isSent = d => !!(d && d.sent);
-  for (const st of S.students) {
+  for (const st of billingOwners()) {
     const add = (kind, month, due) => out.push({ st, kind, month, due, doc: findDoc(st.id, kind, month), key: `${st.id}|${kind}|${month}` });
     if (st.plan === 'end') {
       const prev = findDoc(st.id, 'end', prevMonth(ym));
@@ -984,7 +1081,7 @@ function renderHome() {
   const drafts = S.invoices.filter(d => !d.sent && !shown.has(d)).sort((a, b) => b.month.localeCompare(a.month));
   $('#draftCard').hidden = !drafts.length;
   $('#draftList').innerHTML = drafts.map(d => `<div class="owe" data-id="${d.id}">
-      <div class="who">${esc(student(d.studentId).name)}</div>
+      <div class="who">${esc(whoOf(d))}</div>
       <div class="what">${esc(KINDS[d.kind].short)} · ${esc(monthName(d.month))}</div>
       <div class="side">${pillHtml(d)}<button class="small" data-act="open">Continue</button></div></div>`).join('');
 }
@@ -999,7 +1096,7 @@ function renderTasks(tasks = homeTasks()) {
     const btn = !d ? (t.kind === 'summary' ? 'Write summary' : 'Create invoice') : d.sent ? 'Open' : 'Continue';
     const pill = !d ? `<span class="pill ${late ? 'late' : 'todo'}">${late ? 'Late' : 'Not started'}</span>` : `<span class="pill ${s.cls}">${esc(s.label)}</span>`;
     return `<div class="task" data-key="${t.key}">
-      <div class="who">${esc(t.st.name)} <small>${esc(t.st.level)}</small></div>
+      <div class="who">${esc(t.st.name)} <small>${t.st.isFamily ? 'siblings · one invoice' : esc(t.st.level)}</small></div>
       <div class="what">${esc(what)} · ${esc(dueTxt)}</div>
       <div class="side">${pill}<button class="${!d || !d.sent ? 'primary' : ''} small" data-act="go">${btn}</button></div></div>`;
   }).join('') || '<div class="empty-note">No students yet. <button class="link" data-act="addStudent">Add your first student</button></div>';
@@ -1009,7 +1106,7 @@ function renderOwed(owed = S.invoices.filter(d => isInvoice(d) && d.sent && !d.p
   const sum = owed.reduce((a, d) => a + totals(d).grand, 0);
   $('#owedTotal').innerHTML = owed.length ? `<span class="pill unpaid">RM ${num(sum)}</span>` : '';
   $('#owedList').innerHTML = owed.map(d => `<div class="owe" data-id="${d.id}">
-      <div class="who">${esc(student(d.studentId).name)}</div>
+      <div class="who">${esc(whoOf(d))}</div>
       <div class="what">${esc(invNo(d))} · ${esc(monthName(d.month))} · sent ${esc(shortDate(d.sentAt) || '')}</div>
       <div class="side"><b>RM ${num(totals(d).grand)}</b><button class="primary small" data-act="pay">Mark paid</button></div></div>`).join('')
     || '<div class="empty-note">Nothing outstanding. 🎉</div>';
@@ -1149,12 +1246,48 @@ function tableStart(d, tt) {   // booked-slots style
   return `<table><colgroup><col style="width:9%"><col style="width:46%"><col></colgroup>
     <thead><tr><th>Weeks</th><th colspan="2">Dates</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
-function tableSummary(d) {   // lesson-summary style
-  const paidLine = d.payDate ? `<br>${fmtDate(d.payDate)}${d.payRef ? `<br>(${esc(d.payRef)})` : ''}` : '';
+function summaryLessons(d) {
   return `<table><thead><tr><th class="c-week">Week</th><th>Date</th><th class="c-sess">Hours per session</th></tr></thead>
-      <tbody>${lessonRows(d.lessons)}</tbody></table>
-    <table class="status"><tr><td class="c-week"></td><td>Status${d.payDate ? '<br>Payment received by' : ''}</td>
+      <tbody>${lessonRows(d.lessons)}</tbody></table>`;
+}
+function statusTable(d) {
+  const paidLine = d.payDate ? `<br>${fmtDate(d.payDate)}${d.payRef ? `<br>(${esc(d.payRef)})` : ''}` : '';
+  return `<table class="status"><tr><td class="c-week"></td><td>Status${d.payDate ? '<br>Payment received by' : ''}</td>
       <td class="c-sess center">${esc(d.payStatus || 'PENDING')}${paidLine}</td></tr></table>`;
+}
+function tableSummary(d) { return summaryLessons(d) + statusTable(d); }   // lesson-summary style
+
+/* Siblings on one invoice (her layout): a section per child with that child's subtotal, then "Sum to pay" */
+function kidTableEnd(v, tt) {
+  const rows = lessonRows(v.lessons) +
+    `<tr><td></td><td>Total</td><td class="right">${num(tt.sessions)} Session${tt.sessions === 1 ? '' : 's'}<br>RM${num(v.rate)}/Hr/Session<br>RM ${num(tt.fee)}</td></tr>`;
+  return `<table><thead><tr><th class="c-week">Week${v.kind === 'start' ? 's' : ''}</th><th>Date</th><th class="c-sess">Hours per session</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function kidTableStart(v, tt) {
+  const t = tableStart({ ...v, adjAmount: 0 }, { ...tt, adj: 0, grand: tt.fee });
+  // a child's section ends with their own subtotal; the total to pay comes once, in "Sum to pay"
+  return t.replace(/<tr><td><\/td><td>Total sum to pay<\/td><td>RM [^<]*<\/td><\/tr>/, '')
+    .replace('/Hour/Session</td></tr>', `/Hour/Session<br>RM ${num(tt.fee)}</td></tr>`);
+}
+function sumToPay(d, tt) {
+  let rows = '';
+  if (d.kind === 'end' && (d.lastPayDate || d.lastPayRef))
+    rows += `<tr><td class="c-week"></td><td>Last payment received by</td><td class="right">${fmtDate(d.lastPayDate)}${d.lastPayRef ? `<br>(${esc(d.lastPayRef)})` : ''}</td></tr>`;
+  rows += `<tr><td class="c-week"></td><td>Total fee per student</td><td class="right">${tt.parts.map(x => 'RM ' + num(x.fee)).join('<br>')}</td></tr>`;
+  rows += adjRow(d, tt, 'right');
+  rows += `<tr class="grand"><td class="c-week"></td><td>Total sum to pay</td><td class="right">RM ${num(tt.grand)}</td></tr>`;
+  return `<div class="kid"><div class="bar">Sum to pay</div><table><tbody>${rows}</tbody></table></div>`;
+}
+function familyBody(d, tt) {
+  const H = { end: ['Students’ Detail', 'Lesson Detail'], start: ['Student', 'Timeslot booked'], summary: ['Students’ Detail', 'Lessons Detail'] }[d.kind];
+  const kids = tt.parts.map(x => {
+    const v = { ...d, parts: undefined, studentId: x.p.studentId, lessons: x.p.lessons, slots: x.p.slots, rate: x.p.rate };
+    const table = d.kind === 'start' ? kidTableStart(v, x) : d.kind === 'summary' ? summaryLessons(v) : kidTableEnd(v, x);
+    return `<div class="kid"><div class="bar">${H[0]}</div>
+      <p>${esc(x.st.name)}${x.st.level ? ` (${esc(x.st.level)})` : ''}</p>
+      <div class="bar">${H[1]}</div>${table}</div>`;
+  }).join('');
+  return kids + (d.kind === 'summary' ? statusTable(d) : sumToPay(d, tt));
 }
 function notesHtml(text) {
   const paras = String(text || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
@@ -1177,7 +1310,7 @@ function renderPreview() {
   const d = S.draft; if (!d) return;
   const t = S.tutor, st = student(d.studentId), bank = docBank(d), no = invNo(d), tt = totals(d);
   const H = { end: ['Student Detail', 'Lesson Detail'], start: ['Student', 'Timeslot booked'], summary: ['Students’ Detail', 'Lessons Detail'] }[d.kind];
-  const table = d.kind === 'start' ? tableStart(d, tt) : d.kind === 'summary' ? tableSummary(d) : tableEnd(d, tt);
+  const table = d.parts ? '' : d.kind === 'start' ? tableStart(d, tt) : d.kind === 'summary' ? tableSummary(d) : tableEnd(d, tt);
   $('#paper').innerHTML = `
     <div class="pghead">${esc(no)}</div>
     <div class="bar first">${esc(t.name)}</div>
@@ -1188,15 +1321,19 @@ function renderPreview() {
     <p>Bank: ${esc(bank.bank)}</p>
     <p>Account No: ${esc(bank.accNo)}</p>
     <p>Account Name: ${esc(bank.accName)}</p>
-    <div class="bar">${H[0]}</div>
+    ${d.parts ? familyBody(d, tt) : `<div class="bar">${H[0]}</div>
     <p>${esc(st.name)}${st.level ? ` (${esc(st.level)})` : ''}</p>
     <div class="bar">${H[1]}</div>
-    ${table}
+    ${table}`}
     <div class="closing">${notesHtml(d.notes)}<p>${esc(t.thanks)}</p>${d.greeting ? `<p class="greeting">${esc(d.greeting)}</p>` : ''}</div>
     <div class="pfooter"><span>${esc(footerText(d))}</span><span>${esc(no)}</span></div>`;
   setPageStyle(no, footerText(d));
 
-  $('#sumLeft').textContent = `${num(tt.sessions)} session${tt.sessions === 1 ? '' : 's'} × RM${num(d.rate)}${tt.adj ? ` ${tt.adj < 0 ? '−' : '+'} RM${num(Math.abs(tt.adj))}` : ''}`;
+  const adjTxt = tt.adj ? ` ${tt.adj < 0 ? '−' : '+'} RM${num(Math.abs(tt.adj))}` : '';
+  $('#sumLeft').textContent = d.parts
+    ? tt.parts.map(x => `${x.st.name} ${num(x.sessions)} × RM${num(x.rate)}`).join(' + ') + adjTxt
+    : `${num(tt.sessions)} session${tt.sessions === 1 ? '' : 's'} × RM${num(d.rate)}${adjTxt}`;
+  renderKidTabs(tt);
   $('#sumRight').textContent = `RM ${num(tt.grand)}`;
   $('#invNoInput').placeholder = autoNo(d);
   $('#kindLabel').textContent = `Preview · ${fileBaseName()}.pdf`;
@@ -1222,7 +1359,10 @@ function syncInputs() {
   $('#docBankSel').value = d.bankId && d.bankId !== usual.id && S.tutor.banks.some(b => b.id === d.bankId) ? d.bankId : '';
   $('#docBankHint').textContent = S.tutor.banks.length > 1 ? 'Only changes this document. Add accounts in Settings › Bank accounts.' : 'You have one account. Add more in Settings › Bank accounts.';
   document.querySelectorAll('[data-show]').forEach(el => { el.hidden = !el.dataset.show.split(' ').includes(d.kind); });
-  const st = student(d.studentId);
+  const st = student(activeSid(d));
+  $('#rateLabel').textContent = d.parts ? `Price per session for ${st.name || 'this child'} (RM)` : 'Price per session (RM)';
+  $('#lessonsTitle').textContent = d.parts ? `Lessons – ${st.name}` : 'Lessons';
+  $('#slotsTitle').textContent = d.parts ? `Booked slots – ${st.name}` : 'Booked slots';
   $('#schedHint').textContent = st.schedule.length
     ? 'Weekly schedule: ' + st.schedule.map(s => `${DAYS[s.weekday]} ${s.time}`).join(', ') + ' (change it in Settings › Students).'
     : 'Tip: give this student a weekly schedule in Settings › Students, then “Fill from weekly schedule” adds every slot of the month.';
@@ -1239,23 +1379,44 @@ document.addEventListener('input', e => {
 });
 // Changing the month keeps auto-filled parts in step, but never touches what she typed herself.
 function onMonthChange(oldM, newM) {
-  const d = S.draft, st = student(d.studentId);
+  const d = S.draft;
   if (GREETINGS.includes(d.greeting)) d.greeting = GREETINGS[Number(newM.slice(5)) - 1];
   if (d.kind === 'start') {
     const dates = list => list.map(s => s.date).join();
-    const untouched = d.slots.every(s => !s.movedDate) && dates(d.slots) === dates(slotsFromSchedule(st, oldM || ''));
-    if (untouched && st.schedule.length) { d.slots = slotsFromSchedule(st, newM); renderSlots(); toast(`Slots updated for ${monthName(newM)}`); }
+    let changed = false;
+    for (const p of partsOf(d)) {   // each child follows their own weekly schedule
+      const st = student(p.studentId);
+      const untouched = p.slots.every(s => !s.movedDate) && dates(p.slots) === dates(slotsFromSchedule(st, oldM || ''));
+      if (untouched && st.schedule.length) { p.slots = slotsFromSchedule(st, newM); changed = true; }
+    }
+    if (changed) { renderSlots(); toast(`Slots updated for ${monthName(newM)}`); }
   }
   if (d.kind === 'summary' && !d.payDate) linkPayment(d);
   syncInputs();
 }
 function renderEditorHead() {
-  const d = S.draft, st = student(d.studentId);
-  $('#edTitle').textContent = `${st.name} · ${monthName(d.month)}`;
-  $('#edSub').textContent = KINDS[d.kind].label;
+  const d = S.draft;
+  $('#edTitle').textContent = `${whoOf(d)} · ${monthName(d.month)}`;
+  $('#edSub').textContent = KINDS[d.kind].label + (d.parts ? ' · siblings on one invoice' : '');
   const s = docStatus(d);
   $('#edStatus').className = 'pill ' + s.cls; $('#edStatus').textContent = s.label;
 }
+// Siblings on one invoice: pick which child's lessons/slots the editor shows
+function renderKidTabs(tt) {
+  const d = S.draft, box = $('#kidTabs');
+  box.hidden = !d || !d.parts;
+  if (box.hidden) return;
+  tt = tt || totals(d);
+  const noun = d.kind === 'start' ? 'slots' : 'lessons';
+  box.innerHTML = `<div class="hint">One ${isInvoice(d) ? 'invoice' : 'summary'} for ${esc(whoOf(d))}. Choose a child to fill in their ${noun}:</div>` +
+    tt.parts.map((x, i) => `<button class="kidtab ${i === partIdx(d) ? 'on' : ''}" data-kid="${i}" aria-pressed="${i === partIdx(d)}">
+      <b>${esc(x.st.name)}</b><small>${num(x.sessions)} session${x.sessions === 1 ? '' : 's'}${isInvoice(d) ? ' · RM ' + num(x.fee) : ''}</small></button>`).join('');
+}
+$('#kidTabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-kid]'); if (!b || !S.draft) return;
+  S.draft._p = +b.dataset.kid; renderDoc();
+  $(`#kidTabs [data-kid="${b.dataset.kid}"]`)?.focus();
+});
 function renderDoc() {
   if (!S.draft) return;
   syncInputs(); renderEditorHead(); renderSlots(); renderLessons(); renderQuickAdd(); renderSendPanel(); renderPreview();
@@ -1296,7 +1457,7 @@ function renderStudents() {
   const dayOpts = sel => DAYS.map((d, i) => `<option value="${i}" ${i === Number(sel) ? 'selected' : ''}>${d}</option>`).join('');
   $('#studentList').innerHTML = S.students.map((s, i) => `
     <details class="student" data-i="${i}" data-plan="${s.plan}" ${openStudents.has(s.id) ? 'open' : ''}>
-      <summary><b class="sname">${esc(s.name || '(new student)')}</b><span class="muted splan">${esc((PLANS[s.plan] || PLANS.end).short)} · RM ${num(s.rate)}</span></summary>
+      <summary><b class="sname">${esc(s.name || '(new student)')}</b><span class="muted splan">${esc((PLANS[s.plan] || PLANS.end).short)} · RM ${num(s.rate)}</span>${liveFamily(familyOf(s.id)) ? `<span class="muted">· one invoice with ${esc(joinNames(famMembers(familyOf(s.id)).filter(m => m !== s).map(m => m.name)))}</span>` : ''}</summary>
       <div class="row3">
         <div><label>Name</label><input data-f="name" value="${esc(s.name)}"></div>
         <div><label>Level</label><input data-f="level" value="${esc(s.level)}" placeholder="e.g. Year 10"></div>
@@ -1342,6 +1503,13 @@ $('#studentList').addEventListener('input', e => {
   const s = S.students[+box.dataset.i], f = e.target.dataset.f, sf = e.target.dataset.sf;
   if (f) {
     s[f] = f === 'rate' ? Number(e.target.value) || 0 : f === 'greeting' ? e.target.checked : e.target.value;
+    const fam = familyOf(s.id);
+    if (f === 'plan' && liveFamily(fam)) {   // children on one invoice are billed the same way
+      for (const m of famMembers(fam)) m.plan = s.plan;
+      toast(`${joinNames(famMembers(fam).map(m => m.name))} are on one invoice, so they all changed`);
+      persist(); renderStudents(); renderFamilies(); return;
+    }
+    if (['name', 'code', 'filePrefix', 'level', 'fileLabel'].includes(f)) renderFamilies();
     if (f === 'plan' || f === 'rate') { box.dataset.plan = s.plan; box.querySelector('.splan').textContent = `${PLANS[s.plan].short} · RM ${num(s.rate)}`; }
     if (f === 'name') box.querySelector('.sname').textContent = s.name || '(new student)';
   }
@@ -1359,6 +1527,8 @@ $('#studentList').addEventListener('click', async e => {
   if (act === 'del') {
     if (!await ask(`Remove ${s.name || 'this student'}?`, 'Their invoices stay in the Invoices list.', 'Remove', true)) return;
     S.students = S.students.filter(x => x !== s);
+    for (const fm of S.families) fm.members = fm.members.filter(id => id !== s.id);
+    renderFamilies();
   }
   persist(); renderStudents();
 });
@@ -1368,8 +1538,67 @@ $('#addStudent').onclick = () => {
   persist(); renderStudents();
   $('#studentList .student:last-child input').focus();
 };
+/* ---------- siblings paid together ---------- */
+function famExample(f) {
+  const m = famMembers(f);
+  if (m.length < 2) return 'Add at least two children to make one combined invoice.';
+  const o = ownerInfo(f.id), mm = mmyyyy(thisMonth());
+  return `Invoice no.: <b>${mm}/${esc(o.code || '…')}</b> · PDF: <b>${esc(o.filePrefix)}_${mm} - ${esc(m[0].fileLabel || 'Invoice')} 01</b>`;
+}
+function renderFamilies() {
+  const free = S.students.filter(s => !familyOf(s.id));
+  $('#familyList').innerHTML = S.families.map((f, i) => {
+    const m = famMembers(f);
+    return `<div class="box fam" data-i="${i}">
+      <label style="margin-top:0">Children on one invoice</label>
+      <div class="fam-kids">${m.map(s => `<span class="kidchip">${esc(s.name || '(no name)')}${s.level ? ` <small>(${esc(s.level)})</small>` : ''}
+          <button class="x" data-act="famOut" data-sid="${s.id}" title="Take ${esc(s.name)} out" aria-label="Take ${esc(s.name)} out of this family">✕</button></span>`).join('')}
+        ${free.length ? `<select data-act="famAdd" aria-label="Add a child"><option value="">＋ Add a child…</option>${free.map(s => `<option value="${s.id}">${esc(s.name || '(no name)')}</option>`).join('')}</select>` : ''}</div>
+      <div class="row">
+        <div><label>Code in the invoice number</label><input data-ff="code" value="${esc(f.code)}" placeholder="${esc(m.map(s => s.code).join('') || 'ABC')}"></div>
+        <div><label>PDF name starts with</label><input data-ff="filePrefix" value="${esc(f.filePrefix)}" placeholder="${esc(m.map(s => s.filePrefix || s.name).filter(Boolean).join('_') || 'Name1_Name2')}"></div>
+      </div>
+      <div class="hint famex">${famExample(f)}</div>
+      <div class="hint">${m[0] ? `Billing, bank account, title and PDF label come from ${esc(m[0].name)}. Leave the boxes above empty to join the children’s own codes and names.` : ''}</div>
+      <div class="meta"><span></span><button class="small danger" data-act="famRemove">Unlink</button></div>
+    </div>`;
+  }).join('') || '<div class="hint">No siblings linked yet. Each student gets their own invoice.</div>';
+}
+$('#addFamily').onclick = () => {
+  S.families.push({ id: uid(), code: '', filePrefix: '', members: [] });
+  persist(); renderFamilies();
+  $('#familyList .fam:last-child select')?.focus();
+};
+$('#familyList').addEventListener('change', async e => {
+  if (e.target.dataset.act !== 'famAdd' || !e.target.value) return;
+  const f = S.families[+e.target.closest('.fam').dataset.i], s = student(e.target.value), first = famMembers(f)[0];
+  if (first && s.plan !== first.plan) {
+    const ok = await ask('Billed differently', `${first.name} is billed “${PLANS[first.plan].label}”, but ${s.name} “${PLANS[s.plan].label}”. Children on one invoice have to be billed the same way. Change ${s.name} to match ${first.name}?`, 'Change and add');
+    if (!ok) { renderFamilies(); return; }
+    s.plan = first.plan;
+  }
+  f.members.push(s.id);
+  persist(); renderFamilies(); renderStudents();
+  if (liveFamily(f)) toast(`${ownerInfo(f.id).name} will get one invoice together`);
+});
+$('#familyList').addEventListener('input', e => {
+  const ff = e.target.dataset.ff; if (!ff) return;
+  const box = e.target.closest('.fam'), f = S.families[+box.dataset.i];
+  f[ff] = e.target.value; persist();
+  box.querySelector('.famex').innerHTML = famExample(f);
+});
+$('#familyList').addEventListener('click', async e => {
+  const act = e.target.dataset.act; if (!act) return;
+  const i = +e.target.closest('.fam').dataset.i, f = S.families[i];
+  if (act === 'famOut') f.members = f.members.filter(id => id !== e.target.dataset.sid);
+  if (act === 'famRemove') {
+    if (famMembers(f).length && !await ask('Unlink these siblings?', 'From now on each child gets their own invoice. Invoices you already made stay as they are.', 'Unlink', true)) return;
+    S.families.splice(i, 1);
+  }
+  persist(); renderFamilies(); renderStudents();
+});
 function renderSettings() {
-  syncInputs(); renderBanks(); renderStudents(); renderThemePicker(); renderStorage();
+  syncInputs(); renderBanks(); renderStudents(); renderFamilies(); renderThemePicker(); renderStorage();
 }
 
 /* ---------- document type (More options) ---------- */
@@ -1381,10 +1610,17 @@ $('#docBankSel').onchange = e => {
 $('#kindSel').onchange = e => {
   const d = S.draft, k = e.target.value;
   d.kind = k;
-  if (k === 'start' && !d.slots.length) d.slots = slotsFromSchedule(student(d.studentId), d.month);
+  if (k === 'start') for (const p of partsOf(d)) if (!p.slots.length) p.slots = slotsFromSchedule(student(p.studentId), d.month);
   if (k === 'end' && !d.lastPayDate && !d.lastPayRef) fillLastPayment(d);
-  if (k === 'summary') { linkPayment(d); const inv = monthInvoice(d.studentId, d.month); if (inv && !d.lessons.length) d.lessons = lessonsFromSlots(inv); }
-  if (!d.sent) d.seq = nextSeq(d.studentId, k);
+  if (k === 'summary') {
+    linkPayment(d);
+    const inv = monthInvoice(ownerOf(d), d.month);
+    if (inv) for (const p of partsOf(d)) {
+      const ip = partsOf(inv).find(x => x.studentId === p.studentId);
+      if (ip && !p.lessons.length) p.lessons = lessonsFromSlots(ip);
+    }
+  }
+  if (!d.sent) d.seq = nextSeq(ownerOf(d), k);
   persist(); renderDoc();
 };
 
@@ -1430,7 +1666,7 @@ $('#addSlot').onclick = () => {
   $('#slotList .box:last-child input[type=date]').focus();
 };
 $('#fillSlots').onclick = async () => {
-  const st = student(S.draft.studentId);
+  const st = student(activeSid(S.draft));
   if (!st.schedule.length) { notify('No weekly schedule yet', `Add ${st.name}’s weekly lesson time in Settings › Students first.`); return; }
   if (S.draft.slots.length && !await ask('Replace the slots?', 'The current slots will be replaced by the weekly schedule for this month.', 'Replace')) return;
   S.draft.slots = slotsFromSchedule(st, S.draft.month);
@@ -1459,14 +1695,14 @@ function renderLessons() {
 // The subjects this student usually has, most frequent first (for one-click "Quick add")
 function usualSubjects(sid) {
   const count = {};
-  for (const d of S.invoices) if (d.studentId === sid)
-    for (const l of d.lessons) for (const p of [l, ...(l.more || [])]) if (p.subject) count[p.subject] = (count[p.subject] || 0) + 1;
+  for (const d of S.invoices) for (const part of partsOf(d)) if (part.studentId === sid)
+    for (const l of part.lessons || []) for (const p of [l, ...(l.more || [])]) if (p.subject) count[p.subject] = (count[p.subject] || 0) + 1;
   const list = Object.entries(count).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 5);
   return list.length ? list : ['Math', 'Chemistry', 'Biology', 'Physics'];
 }
 function renderQuickAdd() {
   if (!S.draft) return;
-  $('#quickAdd').innerHTML = 'Quick add:' + usualSubjects(S.draft.studentId)
+  $('#quickAdd').innerHTML = 'Quick add:' + usualSubjects(activeSid(S.draft))
     .map(s => `<button class="chip" data-subject="${esc(s)}">＋ ${esc(s)}</button>`).join('');
 }
 function defaultLessonDate(d) {
@@ -1516,10 +1752,11 @@ $('#sortLessons').onclick = () => {
   persist(); renderLessons(); renderPreview();
 };
 $('#copySlots').onclick = async () => {
-  const inv = monthInvoice(S.draft.studentId, S.draft.month);
-  if (!inv || !inv.slots.some(s => s.date)) { notify('Nothing to copy', `No booked-slot invoice found for ${student(S.draft.studentId).name} in ${monthName(S.draft.month)}.`); return; }
+  const inv = monthInvoice(ownerOf(S.draft), S.draft.month), sid = activeSid(S.draft);
+  const ip = inv && partsOf(inv).find(x => x.studentId === sid);
+  if (!ip || !ip.slots.some(s => s.date)) { notify('Nothing to copy', `No booked-slot invoice found for ${student(sid).name} in ${monthName(S.draft.month)}.`); return; }
   if (S.draft.lessons.length && !await ask('Replace the lessons?', 'The current lessons will be replaced by the dates from the invoice.', 'Replace')) return;
-  S.draft.lessons = lessonsFromSlots(inv);
+  S.draft.lessons = lessonsFromSlots(ip);
   persist(); renderLessons(); renderPreview();
 };
 $('#relinkPay').onclick = () => { linkPayment(S.draft); persist(); syncInputs(); renderPreview(); };
@@ -1541,14 +1778,14 @@ function markPaid(id, date) {
   if (inv.paid && !inv.sent) markSent(inv);
   // fill the payment line of that month's summary, if it hasn't got one yet
   for (const sm of S.invoices)
-    if (sm.kind === 'summary' && sm.studentId === inv.studentId && sm.month === inv.month && (!sm.payDate || !inv.paid)) linkPayment(sm);
+    if (sm.kind === 'summary' && ownerOf(sm) === ownerOf(inv) && sm.month === inv.month && (!sm.payDate || !inv.paid)) linkPayment(sm);
   persist(); refresh();
   toast(inv.paid ? `Marked as paid on ${shortDate(date)}` : 'Marked as not paid');
 }
 async function payDialog(d) {
   const r = await dialog({
     title: d.paid ? 'Payment' : 'Mark as paid',
-    body: `<p><b>${esc(student(d.studentId).name)}</b> · ${esc(invNo(d))} · RM ${num(totals(d).grand)}</p>
+    body: `<p><b>${esc(whoOf(d))}</b> · ${esc(invNo(d))} · RM ${num(totals(d).grand)}</p>
       <label>Payment received on</label><input type="date" id="payDate" value="${esc(d.paidDate || todayISO())}">`,
     buttons: [
       ...(d.paid ? [{ label:'Mark as not paid', value:'unpaid' }] : []),
@@ -1568,9 +1805,9 @@ function renderHistory() {
   $('#fStatus').value = renderHistory.status || 'all';
   const fs = renderHistory.student, fst = renderHistory.status || 'all';
   const order = { start:0, end:0, summary:1 };
-  const list = S.invoices.filter(d => (!fs || d.studentId === fs) && (fst === 'all'
+  const list = S.invoices.filter(d => (!fs || docHas(d, fs)) && (fst === 'all'
       || (fst === 'summary' ? d.kind === 'summary' : docStatus(d).key === fst)))
-    .sort((a, b) => b.month.localeCompare(a.month) || student(a.studentId).name.localeCompare(student(b.studentId).name) || order[a.kind] - order[b.kind]);
+    .sort((a, b) => b.month.localeCompare(a.month) || whoOf(a).localeCompare(whoOf(b)) || order[a.kind] - order[b.kind]);
   if (!list.length) {
     $('#histList').innerHTML = `<div class="empty-note">${S.invoices.length ? 'Nothing matches these filters.' : 'No invoices yet. Start one from “This month”.'}</div>`;
     return;
@@ -1578,10 +1815,10 @@ function renderHistory() {
   $('#histList').innerHTML = `<table class="hist"><thead><tr><th>Document</th><th>Student</th><th>Month</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>` +
     list.map(d => {
       const summary = d.kind === 'summary';
-      const canSummarise = d.kind === 'start' && student(d.studentId).plan === 'startSummary' && !summaryExists(d.studentId, d.month);
+      const canSummarise = d.kind === 'start' && student(d.studentId).plan === 'startSummary' && !summaryExists(ownerOf(d), d.month);
       return `<tr data-id="${d.id}">
         <td class="doc">${esc(invNo(d))}<small>${esc(KINDS[d.kind].short)}</small></td>
-        <td>${esc(student(d.studentId).name)}</td>
+        <td>${esc(whoOf(d))}</td>
         <td>${esc(monthLabel(d.month))}</td>
         <td class="num">${summary ? '—' : 'RM ' + num(totals(d).grand)}</td>
         <td>${pillHtml(d)}</td>
@@ -1606,7 +1843,9 @@ $('#histList').addEventListener('click', e => {
   }
 });
 $('#newDocBtn').onclick = async () => {
-  const opts = S.students.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const fams = S.families.filter(liveFamily);
+  const opts = S.students.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('') +
+    (fams.length ? `<optgroup label="Siblings on one invoice">${fams.map(f => `<option value="${f.id}">${esc(ownerInfo(f.id).name)}</option>`).join('')}</optgroup>` : '');
   const r = await dialog({
     title: 'New document',
     body: `<label>Student</label><select id="ndStudent">${opts}</select>
@@ -1619,7 +1858,7 @@ $('#newDocBtn').onclick = async () => {
 // keep the "New document" dialog's type/month in step with the chosen student
 document.addEventListener('change', e => {
   if (e.target.id !== 'ndStudent') return;
-  const st = student(e.target.value), kind = (PLANS[st.plan] || PLANS.end).kind;
+  const st = ownerInfo(e.target.value), kind = (PLANS[st.plan] || PLANS.end).kind;
   $('#ndKind').value = kind; $('#ndMonth').value = suggestMonth(st.id, kind);
 });
 new MutationObserver(() => { if ($('#ndStudent') && !$('#ndMonth').value) $('#ndStudent').dispatchEvent(new Event('change', { bubbles:true })); })
@@ -1627,21 +1866,26 @@ new MutationObserver(() => { if ($('#ndStudent') && !$('#ndMonth').value) $('#nd
 
 /* ---------- checks before saving ---------- */
 function checkDoc(d) {
-  const st = student(d.studentId), bank = docBank(d), issues = [];
+  const st = docOwner(d), bank = docBank(d), issues = [], fam = !!d.parts;
   if (!S.tutor.name.trim()) issues.push('Your name is empty (Settings › My details).');
   if (isInvoice(d)) {
-    if (!(st.code || '').trim() && !(d.invNo || '').trim()) issues.push(`${st.name} has no short code, so the invoice number would end in “/” (add one in Settings › Students).`);
+    if (!(st.code || '').trim() && !(d.invNo || '').trim()) issues.push(fam
+      ? `${st.name} have no short codes, so the invoice number would end in “/” (add them in Settings › Students, or a family code in Settings › Siblings paid together).`
+      : `${st.name} has no short code, so the invoice number would end in “/” (add one in Settings › Students).`);
     if (!bank.accNo) issues.push(`The account number for ${bank.bank || 'the bank'} is empty (Settings › Bank accounts).`);
-    if (!(Number(d.rate) > 0)) issues.push(`The price per session is RM ${num(d.rate)}.`);
+    for (const p of partsOf(d)) if (!(Number(p.rate) > 0)) issues.push(`The price per session${fam ? ' for ' + student(p.studentId).name : ''} is RM ${num(p.rate)}.`);
     if (!(totals(d).grand > 0)) issues.push('The total to pay is RM 0.');
   }
-  const list = d.kind === 'start' ? d.slots : d.lessons, noun = d.kind === 'start' ? 'slot' : 'lesson';
-  if (!list.length) issues.push(`There are no ${noun}s yet.`);
-  const undated = list.filter(x => !x.date).length;
-  if (undated) issues.push(`${undated} ${noun}${undated > 1 ? 's have' : ' has'} no date (${undated > 1 ? 'they' : 'it'} won’t appear on the PDF).`);
-  if (d.kind !== 'start') {
-    const noTopic = d.lessons.filter(l => l.date && !l.topic.trim()).length;
-    if (noTopic) issues.push(`${noTopic} lesson${noTopic > 1 ? 's have' : ' has'} no topic.`);
+  const noun = d.kind === 'start' ? 'slot' : 'lesson';
+  for (const p of partsOf(d)) {
+    const list = (d.kind === 'start' ? p.slots : p.lessons) || [], who = fam ? student(p.studentId).name + ': ' : '';
+    if (!list.length) issues.push(fam ? `${student(p.studentId).name} has no ${noun}s yet.` : `There are no ${noun}s yet.`);
+    const undated = list.filter(x => !x.date).length;
+    if (undated) issues.push(`${who}${undated} ${noun}${undated > 1 ? 's have' : ' has'} no date (${undated > 1 ? 'they' : 'it'} won’t appear on the PDF).`);
+    if (d.kind !== 'start') {
+      const noTopic = list.filter(l => l.date && !l.topic.trim()).length;
+      if (noTopic) issues.push(`${who}${noTopic} lesson${noTopic > 1 ? 's have' : ' has'} no topic.`);
+    }
   }
   if (d.kind === 'summary' && d.payStatus !== 'PAID') issues.push('This month’s invoice isn’t marked as paid yet.');
   return issues;
@@ -1659,7 +1903,8 @@ async function preflight(d) {
 /* ---------- PDF / print / sending ---------- */
 // e.g. "<prefix>_082026 - Invoice 07" (prefix and label are set per student)
 function fileBaseName(d = S.draft) {
-  const st = student(d.studentId);
+  const st = docOwner(d);   // siblings: e.g. "<child1>_<child2>_062026 - Invoice 06"
+
   const label = (d.kind === 'summary' ? st.summaryLabel : st.fileLabel) || '';
   const seq = Number(d.seq) > 0 ? ' ' + pad2(d.seq) : '';
   return `${st.filePrefix || st.name || 'Invoice'}_${mmyyyy(d.month)}${label ? ' - ' + label : ''}${seq}`.replace(/[\\/:*?"<>|]/g, '-');
@@ -1714,9 +1959,10 @@ function renderSendPanel() {
 }
 function hidePdfResult() { $('#pdfResult').hidden = true; }
 function waMessage(d) {
-  const st = student(d.studentId), bank = docBank(d), tt = totals(d);
-  const vars = { student: st.name, month: monthName(d.month), invoice: invNo(d), total: 'RM ' + num(tt.grand), sessions: num(tt.sessions),
-    rate: 'RM ' + num(d.rate), bank: bank.bank || '', account: bank.accNo || '', accountName: bank.accName || '', tutor: S.tutor.name, thanks: S.tutor.thanks };
+  const bank = docBank(d), tt = totals(d);
+  const rates = [...new Set(tt.parts.map(x => 'RM ' + num(x.rate)))].join(' / ');
+  const vars = { student: whoOf(d), month: monthName(d.month), invoice: invNo(d), total: 'RM ' + num(tt.grand), sessions: num(tt.sessions),
+    rate: rates, bank: bank.bank || '', account: bank.accNo || '', accountName: bank.accName || '', tutor: S.tutor.name, thanks: S.tutor.thanks };
   const tpl = isInvoice(d) ? S.prefs.waInvoice : S.prefs.waSummary;
   return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
 }

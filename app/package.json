@@ -1,7 +1,7 @@
 {
   "name": "cikgu-pay",
   "productName": "Cikgu Pay",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Monthly invoices for private tuition",
   "author": "Denlopen",
   "license": "MIT",

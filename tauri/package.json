@@ -1,7 +1,7 @@
 {
   "name": "cikgu-pay-tauri",
   "private": true,
-  "version": "1.4.1",
+  "version": "1.5.0",
   "type": "module",
   "scripts": {
     "sync-ui": "node scripts/sync-ui.mjs",
@@ -9,10 +9,10 @@
     "start": "tauri dev",
     "selftest": "INVOICE_SELFTEST=1 INVOICE_DATA_DIR=$PWD/.selftest tauri dev",
     "build:linux": "tauri build --no-bundle",
-    "build:win": "RUSTFLAGS=\"--remap-path-prefix=$HOME=/build\" PATH=$HOME/.cargo/bin:$HOME/.local/share/nsis-wrapper:$PATH tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc && mkdir -p dist && cp \"src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Cikgu Pay_1.4.1_x64-setup.exe\" dist/Cikgu-Pay-Setup-1.4.1.exe",
+    "build:win": "RUSTFLAGS=\"--remap-path-prefix=$HOME=/build\" PATH=$HOME/.cargo/bin:$HOME/.local/share/nsis-wrapper:$PATH tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc && mkdir -p dist && cp \"src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Cikgu Pay_1.5.0_x64-setup.exe\" dist/Cikgu-Pay-Setup-1.5.0.exe",
     "start:smooth": "tauri dev --config src-tauri/tauri.smooth.conf.json",
     "selftest:smooth": "INVOICE_SELFTEST=1 INVOICE_DATA_DIR=$PWD/.selftest tauri dev --config src-tauri/tauri.smooth.conf.json",
-    "build:win:smooth": "RUSTFLAGS=\"--remap-path-prefix=$HOME=/build\" PATH=$HOME/.cargo/bin:$HOME/.local/share/nsis-wrapper:$PATH tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --config src-tauri/tauri.smooth.conf.json && mkdir -p dist && cp \"src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Cikgu Pay_1.4.1_x64-setup.exe\" dist/Cikgu-Pay-Smooth-Setup-1.4.1.exe"
+    "build:win:smooth": "RUSTFLAGS=\"--remap-path-prefix=$HOME=/build\" PATH=$HOME/.cargo/bin:$HOME/.local/share/nsis-wrapper:$PATH tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --config src-tauri/tauri.smooth.conf.json && mkdir -p dist && cp \"src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Cikgu Pay_1.5.0_x64-setup.exe\" dist/Cikgu-Pay-Smooth-Setup-1.5.0.exe"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.6"

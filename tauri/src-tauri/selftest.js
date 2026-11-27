@@ -117,6 +117,43 @@
       S.draft.lessons[0].more.push({ subject: 'Chemistry', topic: 'Haber process' }); S.draft.seq = 10; renderDoc();
       out.summary = { pdf: await pdf(), kind: S.draft.kind, invNo: invNo(S.draft), file: fileBaseName(),
                       pay: [S.draft.payStatus, S.draft.payDate, S.draft.payRef], lessons: S.draft.lessons.length };
+      // 4) Siblings paid together (two made-up children): linked in Settings, one combined invoice
+      for (const f of [{ name: 'Student D', level: 'Year 9', code: 'TSD', rate: 100, filePrefix: 'Dee', plan: 'end' },
+                       { name: 'Student E', level: 'Year 5', code: 'TSE', rate: 80, filePrefix: 'Eee', plan: 'start' }])
+        S.students.push({ ...studentDefaults(), bankId: S.tutor.banks[0].id, fileLabel: 'Invoice', ...f });
+      persist(); showView('settings');
+      $('#addFamily').click();
+      const famPick = async name => { const sel = document.querySelector('#familyList .fam:last-child select[data-act=famAdd]');
+        sel.value = S.students.find(x => x.name === name).id; sel.dispatchEvent(new Event('change', { bubbles: true })); await sleep(80); };
+      await famPick('Student D'); await famPick('Student E');
+      const fam = { billingDialog: $('#modal').hidden ? null : $('#dlgTitle').textContent };
+      document.querySelector('#dlgBtns .primary')?.click(); await sleep(80);     // "Change and add"
+      const famObj = S.families[S.families.length - 1];
+      fam.members = famMembers(famObj).map(x => x.name + ':' + x.plan);
+      fam.tasks = homeTasks().filter(t => /Student [DE]/.test(t.st.name)).map(t => t.st.name);
+      const d5 = createDoc(famObj.id, 'end', '2026-06');
+      const addL = (date, topic) => { $('#addLesson').click(); const box = $('#lessonList .box:last-child');
+        for (const [f, v] of [['date', date], ['subject', 'Math'], ['topic', topic]]) type(box.querySelector('[data-f=' + f + ']'), v); };
+      ['02', '03', '06', '07'].forEach((dd, i) => addL('2026-06-' + dd, 'Exam revision – all criteria ' + (i + 1)));
+      document.querySelector('#kidTabs [data-kid="1"]').click();
+      ['05', '07', '09'].forEach((dd, i) => addL('2026-06-' + dd, 'Algebra – simplify and solve equations ' + (i + 1)));
+      const paperF = $('#paper').innerText;
+      fam.tabs = $('#kidTabs').innerText.replace(/\s+/g, ' ');
+      fam.parts = totals(d5).parts.map(x => x.sessions + 'x' + x.rate + '=' + x.fee);
+      fam.total = totals(d5).grand; fam.invNo = invNo(d5); fam.file = fileBaseName(); fam.wa = waMessage(d5);
+      fam.paper = { d: paperF.includes('Student D (Year 9)'), e: paperF.includes('Student E (Year 5)'), sumToPay: paperF.includes('Sum to pay'),
+        sub: /3 Sessions/.test(paperF) && /RM 240/.test(paperF), grand: /Total sum to pay\s*RM 640/.test(paperF) };
+      fam.pdf = await pdf();
+      markPaid(d5.id, '2026-07-02'); fam.status = docStatus(d5).label;
+      const d6 = createDoc(famObj.id, 'end', '2026-07');
+      fam.next = { seq: d6.seq, lastPayRef: d6.lastPayRef, parts: d6.parts.length };
+      S.invoices.splice(S.invoices.indexOf(d6), 1); S.draft = null;
+      out.family = fam;
+      if (!(fam.billingDialog && fam.members.join() === 'Student D:end,Student E:end' && fam.tasks.length === 1 && fam.total === 640
+            && fam.invNo === '062026/TSDTSE' && fam.file === 'Dee_Eee_062026 - Invoice 01' && Object.values(fam.paper).every(Boolean)
+            && fam.wa.includes('Student D & Student E') && fam.wa.includes('RM 640') && fam.status.startsWith('Paid')
+            && fam.next.seq === 2 && fam.next.lastPayRef === '062026/TSDTSE'))
+        errors.push('siblings on one invoice check failed');
       showView('home');
       out.owed = [...document.querySelectorAll('#owedList .owe')].map(o => o.innerText.replace(/\n/g, ' | '));
       out.history = S.invoices.map(i => i.kind + ' ' + invNo(i) + (i.paid ? ' paid' : ''));
@@ -165,6 +202,8 @@
       await report('storageBack', { foundAgain: back.dir, invoices: S.invoices.length, reset, nowDefault: after.is_default, dir: after.dir });
       retargetPdfs(reset.old, reset.new);
       await sleep(400);
+      const famDoc5 = S.invoices.find(d => d.familyId);
+      await report('familyAfterReload', famDoc5 ? { total: totals(famDoc5).grand, parts: famDoc5.parts.map(p => p.lessons.length), activeLessons: famDoc5.lessons.length, paid: famDoc5.paid } : null);
       await report('afterReload', { tourShownAgain: !$('#tour').hidden, toursDone: S.prefs.toursDone, tutor: S.tutor.name, invoices: S.invoices.length, docs: S.invoices.map(d => d.kind + ' ' + invNo(d) + ' ' + docStatus(d).label), view,
         theme: document.documentElement.dataset.theme + '/' + document.documentElement.dataset.accent, savedPrefs: S.prefs });
       await invoke('selftest_finish');

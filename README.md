@@ -16,6 +16,7 @@ Cikgu Pay is a small Windows app for private tutors. It makes monthly invoices a
 - A short guided tour the first time the app opens, and another the first time an invoice is opened. You can replay them in Settings › Help.
 - Emoji picker (😊 button) in the closing message, note, greeting and WhatsApp message fields. Search it, or browse 6 categories and your recently used emoji. Works offline.
 - Choose where everything is kept (e.g. a Google Drive or OneDrive folder for automatic online backup). The app moves the files for you, checks each one, and tells you if the folder can't be found, for example when a USB drive is unplugged.
+- Brothers and sisters whose parents pay together can share one invoice (Settings › Siblings paid together): a section for each child with their own price, then "Sum to pay" with the combined total. The PDF name joins the children's names, e.g. `Name1_Name2_062026 - Invoice 06`.
 - Everything saves automatically, with a daily backup of the last 30 days. Colour themes include Classic and Catppuccin Latte / Frappé / Macchiato / Mocha.
 
 The app starts empty: a short setup asks for your details, bank account and students. No student data is included.
