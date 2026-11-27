@@ -21,7 +21,9 @@ Cikgu Pay is a small Windows app for private tutors. It makes monthly invoices a
 
 The app starts empty: a short setup asks for your details, bank account and students. No student data is included.
 
-![First-run setup](docs/screenshot-setup.png)
+
+https://github.com/user-attachments/assets/1b8e8290-b51a-42fb-bdbf-7ee91f6aa2be
+
 
 ## Downloads
 Get the Windows installer from the [Releases](../../releases) page:
